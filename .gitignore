@@ -1,0 +1,101 @@
+# ========================================
+# Python bytecode, caches y compilados
+# ========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ========================================
+# Build, packaging y distribución
+# ========================================
+build/
+dist/
+site/
+.eggs/
+*.egg
+*.egg-info/
+pip-wheel-metadata/
+wheels/
+
+# ========================================
+# Entornos virtuales y versiones locales
+# ========================================
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# ========================================
+# Test, cobertura y analizadores
+# ========================================
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.pyre/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# ========================================
+# Jupyter / notebooks
+# ========================================
+.ipynb_checkpoints/
+
+# ========================================
+# Artefactos locales de ejecución
+# ========================================
+*.log
+logs/
+tmp/
+temp/
+.cache/
+*.pid
+*.pid.lock
+
+# ========================================
+# Configuración local y secretos
+# ========================================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+service-account.json
+credentials.json
+
+# ========================================
+# Cloud / credenciales locales comunes
+# ========================================
+.gcloud/
+firebase-debug.log
+
+# ========================================
+# IDE / editor
+# ========================================
+.vscode/
+.idea/
+*.iml
+*.swp
+*.swo
+*~
+
+# ========================================
+# Sistema operativo
+# ========================================
+.DS_Store
+Thumbs.db
+
+# ========================================
+# Artefactos varios
+# ========================================
+*.sqlite3
