@@ -1,5 +1,5 @@
 """Aplicacion minima de hola mundo."""
-
+import cowsay
 try:
     from app.config import load_config
     from app.schemas import GreetingMessage
@@ -16,7 +16,6 @@ def build_message() -> GreetingMessage:
 def get_message() -> str:
     """Devuelve el texto final del saludo."""
     return build_message().message
-
 
 def main() -> None:
     """Ejecuta el punto de entrada de la CLI."""
