@@ -7,7 +7,6 @@ except ModuleNotFoundError:  # Permite ejecutar como script directo.
     from config import load_config
     from schemas import GreetingMessage
 
-
 def build_message() -> GreetingMessage:
     """Construye el mensaje de saludo a partir de la configuracion."""
     config = load_config()
