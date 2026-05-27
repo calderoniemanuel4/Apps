@@ -1,0 +1,47 @@
+# Entornos y dependencias
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Configuracion local y secretos
+.env
+.env.*
+!.env.example
+credentials/
+secrets/
+*.pem
+*.key
+*.p12
+*.json
+!package.json
+!package-lock.json
+
+# Playwright y sesiones web
+playwright/.auth/
+playwright/.cache/
+storage_state*.json
+cookies*.json
+sessions/
+
+# Logs y salidas locales
+logs/*
+!logs/.gitkeep
+*.log
+*.txt
+
+# Sistema operativo y editores
+.DS_Store
+.idea/
+.vscode/
+
+# Artefactos temporales
+tmp/
+temp/
+downloads/
+exports/

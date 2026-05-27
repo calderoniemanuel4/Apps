@@ -1,0 +1,1 @@
+"""Esquemas validados del dominio."""
