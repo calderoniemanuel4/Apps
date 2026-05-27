@@ -1,4 +1,4 @@
-# BotSaldos
+# BotSaldos Financieros
 
 Automatizacion local para actualizar una planilla de ingresos y gastos con datos obtenidos desde internet, APIs gratuitas y formularios web operados con Playwright.
 
