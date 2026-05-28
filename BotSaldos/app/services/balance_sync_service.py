@@ -22,14 +22,18 @@ class BalanceSyncService:
 
     def run(self) -> None:
         """Ejecuta la sincronizacion completa."""
-        logger.info("balance_sync_started")
+        logger.info("balance_sync_started", extra={"dry_run": self._settings.dry_run})
 
         raw_transactions = [
             *self._api_client.fetch_transactions(),
             *self._web_client.fetch_transactions(),
         ]
         transactions = self._normalize_transactions(raw_transactions)
-        self._sheets_client.append_transactions(transactions)
+
+        if self._settings.dry_run:
+            logger.info("dry_run_enabled_skip_sheets_write", extra={"count": len(transactions)})
+        else:
+            self._sheets_client.append_transactions(transactions)
 
         logger.info(
             "balance_sync_finished",

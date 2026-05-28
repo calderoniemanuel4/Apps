@@ -34,3 +34,5 @@
 - Redirigir stdout/stderr a archivos de logs controlados.
 - Evitar ejecuciones solapadas si la escritura no es idempotente.
 - Revisar permisos del usuario que ejecuta el cronjob.
+- Mantener `DRY_RUN=true` durante pruebas y solo desactivarlo cuando el mapeo de datos este validado.
+- Si existe un lockfile, confirmar que no haya un proceso activo antes de eliminarlo.

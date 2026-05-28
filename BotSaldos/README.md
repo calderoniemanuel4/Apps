@@ -70,6 +70,7 @@ Reglas obligatorias del proyecto:
 - Guardar secretos fuera del repositorio, por ejemplo en `.env` local o en un secret manager si luego se despliega.
 - Sanitizar logs: no registrar tokens, cookies, contrasenas, saldos completos si no son necesarios, documentos personales ni payloads crudos.
 - Ejecutar primero contra una planilla de prueba antes de tocar datos reales.
+- Mantener `DRY_RUN=true` hasta validar credenciales, planilla y mapeo de columnas.
 - Diseñar escrituras idempotentes para evitar duplicados si cron ejecuta el script mas de una vez.
 - Preferir APIs oficiales cuando existan antes que scraping con login.
 - Mantener sesiones Playwright en una carpeta ignorada por Git y con permisos locales restringidos.
@@ -127,6 +128,18 @@ cp .env.example .env
 
 Luego completar `.env` con rutas y datos locales. No commitear `.env`.
 
+Por defecto el proyecto corre en modo seguro:
+
+```env
+DRY_RUN=true
+```
+
+Con `DRY_RUN=true`, el bot puede obtener y normalizar datos, pero no debe escribir en Google Sheets. Para escritura real, cambiar a `DRY_RUN=false` y completar como minimo:
+
+- `GOOGLE_APPLICATION_CREDENTIALS`
+- `GOOGLE_SHEETS_SPREADSHEET_ID`
+- `GOOGLE_SHEETS_WORKSHEET_NAME`
+
 ## Ejecucion Prevista
 
 ```bash
@@ -140,6 +153,8 @@ Cron ejemplo, ajustando rutas absolutas:
 ```
 
 Antes de usar cron con datos reales, ejecutar manualmente contra una planilla de staging.
+
+El entrypoint usa `LOCK_FILE` para evitar ejecuciones simultaneas desde cron. Si una ejecucion queda interrumpida, revisar que no haya un proceso activo antes de borrar manualmente el lock.
 
 ## Estado Actual
 
