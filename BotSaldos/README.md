@@ -93,7 +93,8 @@ BotSaldos/
 │   │   └── balance_sync_service.py
 │   └── main.py
 ├── docs/
-│   └── security.md
+│   ├── security.md
+│   └── sheets_contract.md
 ├── logs/
 │   └── .gitkeep
 ├── scripts/
@@ -128,6 +129,12 @@ cp .env.example .env
 
 Luego completar `.env` con rutas y datos locales. No commitear `.env`.
 
+Para usar integraciones reales con Google Sheets, Playwright o APIs HTTP, instalar tambien:
+
+```bash
+pip install -e ".[automation]"
+```
+
 Por defecto el proyecto corre en modo seguro:
 
 ```env
@@ -139,6 +146,8 @@ Con `DRY_RUN=true`, el bot puede obtener y normalizar datos, pero no debe escrib
 - `GOOGLE_APPLICATION_CREDENTIALS`
 - `GOOGLE_SHEETS_SPREADSHEET_ID`
 - `GOOGLE_SHEETS_WORKSHEET_NAME`
+
+Antes de desactivar `DRY_RUN`, confirmar que la primera fila de la worksheet cumple el contrato documentado.
 
 ## Ejecucion Prevista
 
@@ -156,6 +165,16 @@ Antes de usar cron con datos reales, ejecutar manualmente contra una planilla de
 
 El entrypoint usa `LOCK_FILE` para evitar ejecuciones simultaneas desde cron. Si una ejecucion queda interrumpida, revisar que no haya un proceso activo antes de borrar manualmente el lock.
 
+## Contrato De Planilla
+
+El contrato operativo de Google Sheets esta documentado en `docs/sheets_contract.md`.
+
+La worksheet por defecto es `Movimientos` y debe tener estos encabezados exactos en la primera fila:
+
+```text
+occurred_on, description, amount, currency, transaction_type, source, external_id
+```
+
 ## Estado Actual
 
-Este repositorio contiene solo el scaffold inicial. Las integraciones reales se implementaran en pasos posteriores.
+El scaffold inicial esta listo, el contrato minimo de Google Sheets ya esta definido en codigo y documentacion, y `SheetsClient` ya valida encabezados antes de escribir filas con `gspread`. Las integraciones web/API y la normalizacion real se implementaran en pasos posteriores.
