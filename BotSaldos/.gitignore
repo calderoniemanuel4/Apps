@@ -33,7 +33,7 @@ sessions/
 logs/*
 !logs/.gitkeep
 *.log
-*.txt
+logs/*.txt
 
 # Sistema operativo y editores
 .DS_Store
