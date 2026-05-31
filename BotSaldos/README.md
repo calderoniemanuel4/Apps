@@ -177,4 +177,8 @@ occurred_on, description, amount, currency, transaction_type, source, external_i
 
 ## Estado Actual
 
-El scaffold inicial esta listo, el contrato minimo de Google Sheets ya esta definido en codigo y documentacion, y `SheetsClient` ya valida encabezados antes de escribir filas con `gspread`. Las integraciones web/API y la normalizacion real se implementaran en pasos posteriores.
+El scaffold inicial esta listo, el contrato minimo de Google Sheets ya esta definido en codigo y documentacion, y `SheetsClient` ya valida encabezados antes de escribir filas con `gspread`.
+
+El servicio principal ya normaliza movimientos crudos con el esquema `Transaction`, descarta entradas invalidas con logs sanitizados, deduplica por `external_id` cuando existe y devuelve un resumen estructurado de ejecucion.
+
+Las integraciones web/API especificas se implementaran en pasos posteriores.
