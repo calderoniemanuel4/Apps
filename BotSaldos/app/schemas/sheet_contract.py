@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from decimal import Decimal
-
-from app.schemas.transaction import Transaction
+from datetime import datetime, timezone
 
 
-TRANSACTIONS_WORKSHEET_HEADERS: tuple[str, ...] = (
-    "occurred_on",
-    "description",
-    "amount",
-    "currency",
-    "transaction_type",
-    "source",
-    "external_id",
+USD_QUOTE_WORKSHEET_HEADERS: tuple[str, ...] = (
+    "fetched_at",
+    "compra",
+    "venta",
+    "casa",
+    "nombre",
+    "moneda",
+    "fecha_actualizacion",
+    "raw_response",
 )
 
 
@@ -43,28 +43,32 @@ class WorksheetContract:
         )
 
 
-TRANSACTIONS_WORKSHEET_CONTRACT = WorksheetContract(
-    name="Movimientos",
-    required_headers=TRANSACTIONS_WORKSHEET_HEADERS,
+USD_QUOTE_WORKSHEET_CONTRACT = WorksheetContract(
+    name="Cotizaciones",
+    required_headers=USD_QUOTE_WORKSHEET_HEADERS,
 )
 
 
-def transaction_to_sheet_row(transaction: Transaction) -> list[str]:
-    """Convierte un movimiento validado a una fila estable para Google Sheets."""
+def dollar_quote_to_sheet_row(
+    quote: dict[str, object],
+    fetched_at: datetime | None = None,
+) -> list[str]:
+    """Convierte la respuesta cruda de DolarApi a una fila estable para Google Sheets."""
+    observed_at = fetched_at or datetime.now(timezone.utc)
     return [
-        transaction.occurred_on.isoformat(),
-        transaction.description,
-        _format_decimal(transaction.amount),
-        transaction.currency,
-        transaction.transaction_type.value,
-        transaction.source,
-        transaction.external_id or "",
+        observed_at.isoformat(),
+        _stringify_optional(quote.get("compra")),
+        _stringify_optional(quote.get("venta")),
+        _stringify_optional(quote.get("casa")),
+        _stringify_optional(quote.get("nombre")),
+        _stringify_optional(quote.get("moneda")),
+        _stringify_optional(quote.get("fechaActualizacion")),
+        json.dumps(quote, ensure_ascii=True, sort_keys=True),
     ]
 
 
-def _format_decimal(value: Decimal) -> str:
-    """Serializa montos sin notacion cientifica ni ceros sobrantes."""
-    normalized = value.normalize()
-    if normalized == normalized.to_integral():
-        return str(normalized.quantize(Decimal("1")))
-    return format(normalized, "f")
+def _stringify_optional(value: object) -> str:
+    """Serializa valores simples de API manteniendo celdas vacias para ausentes."""
+    if value is None:
+        return ""
+    return str(value)

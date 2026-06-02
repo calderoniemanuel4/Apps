@@ -1,9 +1,10 @@
 [project]
 name = "botsaldos"
 version = "0.1.0"
-description = "Automatizacion segura para actualizar saldos, ingresos y gastos en Google Sheets."
+description = "Automatizacion segura para registrar cotizaciones del dolar en Google Sheets."
 requires-python = ">=3.11"
 dependencies = [
+    "httpx>=0.27",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
     "python-dotenv>=1.0",
@@ -15,7 +16,6 @@ dev = [
 ]
 automation = [
     "playwright>=1.44",
-    "httpx>=0.27",
     "gspread>=6.1",
     "google-auth>=2.29",
 ]

@@ -26,7 +26,7 @@ class Settings(BaseSettings):
         alias="GOOGLE_SHEETS_SPREADSHEET_ID",
     )
     google_sheets_worksheet_name: str = Field(
-        default="Movimientos",
+        default="Cotizaciones",
         alias="GOOGLE_SHEETS_WORKSHEET_NAME",
     )
 
@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     )
 
     external_api_timeout_seconds: int = Field(default=20, alias="EXTERNAL_API_TIMEOUT_SECONDS")
+    external_api_dollar_quote_url: str = Field(
+        default="https://dolarapi.com/v1/dolares/oficial",
+        alias="EXTERNAL_API_DOLLAR_QUOTE_URL",
+    )
 
     @field_validator("log_level")
     @classmethod
@@ -54,6 +58,14 @@ class Settings(BaseSettings):
         """Evita timeouts nulos o excesivos en integraciones externas."""
         if value < 1 or value > 120:
             raise ValueError("EXTERNAL_API_TIMEOUT_SECONDS debe estar entre 1 y 120")
+        return value
+
+    @field_validator("external_api_dollar_quote_url")
+    @classmethod
+    def validate_external_api_url(cls, value: str) -> str:
+        """Valida URLs HTTP configuradas para integraciones externas."""
+        if not value.startswith(("https://", "http://")):
+            raise ValueError("EXTERNAL_API_DOLLAR_QUOTE_URL debe ser una URL HTTP o HTTPS")
         return value
 
     @model_validator(mode="after")

@@ -1,14 +1,16 @@
 """Cliente de Google Sheets."""
 
+import logging
 from typing import Any
 
 from app.core.config import Settings
 from app.schemas.sheet_contract import (
-    TRANSACTIONS_WORKSHEET_CONTRACT,
+    USD_QUOTE_WORKSHEET_CONTRACT,
     WorksheetContract,
-    transaction_to_sheet_row,
+    dollar_quote_to_sheet_row,
 )
-from app.schemas.transaction import Transaction
+
+logger = logging.getLogger(__name__)
 
 
 class SheetsClientError(RuntimeError):
@@ -16,34 +18,35 @@ class SheetsClientError(RuntimeError):
 
 
 class SheetsClient:
-    """Cliente para lectura y escritura de movimientos en Google Sheets."""
+    """Cliente para escritura de cotizaciones en Google Sheets."""
 
     def __init__(
         self,
         settings: Settings,
-        worksheet_contract: WorksheetContract = TRANSACTIONS_WORKSHEET_CONTRACT,
+        worksheet_contract: WorksheetContract = USD_QUOTE_WORKSHEET_CONTRACT,
         gspread_client: Any | None = None,
     ) -> None:
         self._settings = settings
         self._worksheet_contract = worksheet_contract
         self._gspread_client = gspread_client
 
-    def append_transactions(self, transactions: list[Transaction]) -> None:
-        """Escribe movimientos validados en la planilla.
+    def append_dollar_quote(self, quote: dict[str, object]) -> int:
+        """Escribe la respuesta de cotizacion en la planilla."""
+        try:
+            worksheet = self._get_worksheet()
+            headers = worksheet.row_values(1)
+            self.validate_headers(headers)
 
-        La implementacion real debe ser idempotente o deduplicar por `external_id`.
-        """
-        if not transactions:
-            return
-
-        worksheet = self._get_worksheet()
-        self.validate_headers(worksheet.row_values(1))
-
-        rows = [transaction_to_sheet_row(transaction) for transaction in transactions]
-        worksheet.append_rows(rows, value_input_option="RAW")
+            worksheet.append_rows([dollar_quote_to_sheet_row(quote)], value_input_option="RAW")
+            logger.info("dollar_quote_appended_to_sheet")
+            return 1
+        except Exception as exc:
+            if self._is_gspread_exception(exc):
+                raise SheetsClientError("No se pudo leer o escribir en Google Sheets") from exc
+            raise
 
     def validate_headers(self, headers: list[str]) -> None:
-        """Valida encabezados antes de leer o escribir movimientos."""
+        """Valida encabezados antes de escribir cotizaciones."""
         self._worksheet_contract.validate_headers(headers)
 
     def _get_worksheet(self) -> Any:

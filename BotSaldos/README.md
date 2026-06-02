@@ -1,6 +1,6 @@
 # BotSaldos Financieros
 
-Automatizacion local para actualizar una planilla de ingresos y gastos con datos obtenidos desde internet, APIs gratuitas y formularios web operados con Playwright.
+Automatizacion local para actualizar una planilla de Google Sheets con la cotizacion del dolar obtenida desde una API publica.
 
 El proyecto maneja informacion sensible. La prioridad inicial es construir una base segura, observable y facil de operar antes de automatizar movimientos reales sobre Google Sheets.
 
@@ -8,9 +8,8 @@ El proyecto maneja informacion sensible. La prioridad inicial es construir una b
 
 Crear un bot en Python que:
 
-- inicie sesion en portales web mediante Playwright cuando no exista API disponible
-- consulte APIs gratuitas para obtener datos financieros o administrativos
-- normalice los datos obtenidos
+- consulte DolarApi para obtener la cotizacion del dolar
+- valide que la respuesta incluya al menos un valor de cotizacion
 - actualice una planilla de Google Sheets usando una cuenta de servicio de GCP
 - registre ejecuciones, errores y resultados en logs locales
 - pueda ejecutarse de forma programada con cronjobs del sistema
@@ -38,14 +37,14 @@ Crear un bot en Python que:
 
 4. Implementar integraciones
    - `integrations/sheets_client.py` para Google Sheets
-   - `integrations/web_client.py` para Playwright
-   - `integrations/api_client.py` para APIs gratuitas
+   - `integrations/web_client.py` para automatizaciones futuras con Playwright
+   - `integrations/api_client.py` para consultar DolarApi
    - timeouts, errores visibles y logs sin secretos
 
 5. Implementar servicios de negocio
-   - normalizar ingresos y gastos
-   - deduplicar registros
-   - validar saldos antes de escribir
+   - obtener cotizacion del dolar
+   - validar presencia de un valor numerico de cotizacion
+   - escribir la respuesta de la API en la planilla
    - generar resumen de ejecucion
 
 6. Agregar ejecucion programada
@@ -88,6 +87,7 @@ BotSaldos/
 │   │   ├── sheets_client.py
 │   │   └── web_client.py
 │   ├── schemas/
+│   │   ├── sheet_contract.py
 │   │   └── transaction.py
 │   ├── services/
 │   │   └── balance_sync_service.py
@@ -141,7 +141,7 @@ Por defecto el proyecto corre en modo seguro:
 DRY_RUN=true
 ```
 
-Con `DRY_RUN=true`, el bot puede obtener y normalizar datos, pero no debe escribir en Google Sheets. Para escritura real, cambiar a `DRY_RUN=false` y completar como minimo:
+Con `DRY_RUN=true`, el bot puede obtener datos, pero no debe escribir en Google Sheets. Para escritura real, cambiar a `DRY_RUN=false` y completar como minimo:
 
 - `GOOGLE_APPLICATION_CREDENTIALS`
 - `GOOGLE_SHEETS_SPREADSHEET_ID`
@@ -165,20 +165,45 @@ Antes de usar cron con datos reales, ejecutar manualmente contra una planilla de
 
 El entrypoint usa `LOCK_FILE` para evitar ejecuciones simultaneas desde cron. Si una ejecucion queda interrumpida, revisar que no haya un proceso activo antes de borrar manualmente el lock.
 
+## API Externa
+
+`EXTERNAL_API_DOLLAR_QUOTE_URL` define la URL usada para obtener la cotizacion. Valor por defecto:
+
+```text
+https://dolarapi.com/v1/dolares/oficial
+```
+
+La respuesta esperada es un objeto JSON similar a:
+
+```json
+{
+  "compra": 1410,
+  "venta": 1430,
+  "casa": "oficial",
+  "nombre": "Oficial",
+  "moneda": "USD",
+  "fechaActualizacion": "2026-05-31T17:59:00Z"
+}
+```
+
+El bot no valida exhaustivamente todos los campos: solo exige que exista `venta` o `compra` con valor numerico antes de escribir.
+
 ## Contrato De Planilla
 
 El contrato operativo de Google Sheets esta documentado en `docs/sheets_contract.md`.
 
-La worksheet por defecto es `Movimientos` y debe tener estos encabezados exactos en la primera fila:
+La worksheet por defecto es `Cotizaciones` y debe tener estos encabezados exactos en la primera fila:
 
 ```text
-occurred_on, description, amount, currency, transaction_type, source, external_id
+fetched_at, compra, venta, casa, nombre, moneda, fecha_actualizacion, raw_response
 ```
 
 ## Estado Actual
 
 El scaffold inicial esta listo, el contrato minimo de Google Sheets ya esta definido en codigo y documentacion, y `SheetsClient` ya valida encabezados antes de escribir filas con `gspread`.
 
-El servicio principal ya normaliza movimientos crudos con el esquema `Transaction`, descarta entradas invalidas con logs sanitizados, deduplica por `external_id` cuando existe y devuelve un resumen estructurado de ejecucion.
+El servicio principal obtiene la cotizacion desde DolarApi, respeta `DRY_RUN` y devuelve un resumen estructurado de ejecucion.
 
-Las integraciones web/API especificas se implementaran en pasos posteriores.
+`ExternalApiClient` ya puede consultar la API HTTP configurable con timeout, validar que exista una cotizacion numerica y devolver la respuesta cruda.
+
+Las integraciones web especificas se implementaran en pasos posteriores.
