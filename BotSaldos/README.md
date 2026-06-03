@@ -149,6 +149,58 @@ Con `DRY_RUN=true`, el bot puede obtener datos, pero no debe escribir en Google 
 
 Antes de desactivar `DRY_RUN`, confirmar que la primera fila de la worksheet cumple el contrato documentado.
 
+## Validacion De Setup
+
+Antes de escribir contra una planilla de staging o real, ejecutar:
+
+```bash
+python -m app.check_setup
+```
+
+o:
+
+```bash
+./scripts/check_setup.sh
+```
+
+Este chequeo no escribe datos. Valida:
+
+- ruta local de `GOOGLE_APPLICATION_CREDENTIALS`
+- presencia de `GOOGLE_SHEETS_SPREADSHEET_ID`
+- respuesta de DolarApi
+- acceso a la worksheet configurada
+- encabezados esperados en la primera fila
+
+Si falta configuracion local, el comando termina con codigo de salida `1` y muestra que chequeos fallaron.
+
+## Escritura De Staging
+
+Para probar permisos de escritura contra una planilla de staging, primero completar `.env` con credenciales y spreadsheet de prueba. Luego validar:
+
+```bash
+python -m app.check_setup
+```
+
+Si todo responde `OK`, cambiar `DRY_RUN=false` solo apuntando a la planilla de staging y ejecutar:
+
+```bash
+python -m app.staging_write
+```
+
+o:
+
+```bash
+./scripts/staging_write.sh
+```
+
+Para hacer una prueba puntual sin modificar `.env`, usar:
+
+```bash
+env DRY_RUN=false python -m app.staging_write
+```
+
+Este comando vuelve a correr los chequeos de setup, rechaza escribir si `DRY_RUN=true` y espera escribir exactamente una fila de cotizacion.
+
 ## Ejecucion Prevista
 
 ```bash
@@ -201,6 +253,10 @@ fetched_at, compra, venta, casa, nombre, moneda, fecha_actualizacion, raw_respon
 ## Estado Actual
 
 El scaffold inicial esta listo, el contrato minimo de Google Sheets ya esta definido en codigo y documentacion, y `SheetsClient` ya valida encabezados antes de escribir filas con `gspread`.
+
+Existe un chequeo local de setup con `python -m app.check_setup` para validar credenciales, API externa, acceso a Sheets y contrato de headers sin escribir datos.
+
+Existe una escritura controlada de staging con `python -m app.staging_write`, pensada para validar permisos antes de usar el entrypoint programado.
 
 El servicio principal obtiene la cotizacion desde DolarApi, respeta `DRY_RUN` y devuelve un resumen estructurado de ejecucion.
 

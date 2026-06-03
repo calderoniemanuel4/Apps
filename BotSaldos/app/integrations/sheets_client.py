@@ -45,6 +45,19 @@ class SheetsClient:
                 raise SheetsClientError("No se pudo leer o escribir en Google Sheets") from exc
             raise
 
+    def validate_configured_worksheet(self) -> list[str]:
+        """Valida acceso y encabezados de la worksheet configurada sin escribir."""
+        try:
+            worksheet = self._get_worksheet()
+            headers = worksheet.row_values(1)
+            self.validate_headers(headers)
+            logger.info("google_sheets_worksheet_validated")
+            return headers
+        except Exception as exc:
+            if self._is_gspread_exception(exc):
+                raise SheetsClientError("No se pudo validar Google Sheets") from exc
+            raise
+
     def validate_headers(self, headers: list[str]) -> None:
         """Valida encabezados antes de escribir cotizaciones."""
         self._worksheet_contract.validate_headers(headers)
