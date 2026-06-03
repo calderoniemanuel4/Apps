@@ -217,6 +217,20 @@ Antes de usar cron con datos reales, ejecutar manualmente contra una planilla de
 
 El entrypoint usa `LOCK_FILE` para evitar ejecuciones simultaneas desde cron. Si una ejecucion queda interrumpida, revisar que no haya un proceso activo antes de borrar manualmente el lock.
 
+Para instalar o actualizar el cron de staging en esta maquina:
+
+```bash
+./scripts/install_staging_cron.sh
+```
+
+Por defecto instala una ejecucion diaria a las 08:00. Para cambiar el horario:
+
+```bash
+BOTSALDOS_CRON_SCHEDULE="0 9 * * *" ./scripts/install_staging_cron.sh
+```
+
+El instalador reemplaza solo el bloque marcado `BotSaldos staging` y conserva otros cronjobs del usuario.
+
 ## API Externa
 
 `EXTERNAL_API_DOLLAR_QUOTE_URL` define la URL usada para obtener la cotizacion. Valor por defecto:
