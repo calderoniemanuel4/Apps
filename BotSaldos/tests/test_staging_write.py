@@ -2,6 +2,7 @@ from pathlib import Path
 
 from app.check_setup import SetupCheck
 from app.core.config import Settings
+from app.schemas.transaction import BalanceStatus
 from app.services.balance_sync_service import SyncSummary
 from app.staging_write import run_staging_write
 
@@ -37,7 +38,7 @@ def test_staging_write_refuses_when_dry_run_is_enabled(tmp_path: Path) -> None:
         settings=settings,
         setup_checks=_successful_setup_checks(),
         service_factory=lambda _: FakeBalanceSyncService(
-            SyncSummary(fetched_count=1, written_count=1, dry_run=True)
+            _summary(written_count=1, dry_run=True)
         ),
     )
 
@@ -59,7 +60,7 @@ def test_staging_write_reports_unexpected_written_count(tmp_path: Path) -> None:
         settings=settings,
         setup_checks=_successful_setup_checks(),
         service_factory=lambda _: FakeBalanceSyncService(
-            SyncSummary(fetched_count=1, written_count=0, dry_run=False)
+            _summary(written_count=0, dry_run=False)
         ),
     )
 
@@ -81,7 +82,7 @@ def test_staging_write_passes_when_one_row_is_written(tmp_path: Path) -> None:
         settings=settings,
         setup_checks=_successful_setup_checks(),
         service_factory=lambda _: FakeBalanceSyncService(
-            SyncSummary(fetched_count=1, written_count=1, dry_run=False)
+            _summary(written_count=1, dry_run=False)
         ),
     )
 
@@ -97,3 +98,13 @@ def _successful_setup_checks() -> list[SetupCheck]:
         SetupCheck(name="external_api", ok=True, message="ok"),
         SetupCheck(name="google_sheets_access", ok=True, message="ok"),
     ]
+
+
+def _summary(written_count: int, dry_run: bool) -> SyncSummary:
+    return SyncSummary(
+        fetched_count=1,
+        written_count=written_count,
+        dry_run=dry_run,
+        santander_status=BalanceStatus.SKIPPED,
+        santander_failure_reason=None,
+    )

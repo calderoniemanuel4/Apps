@@ -16,6 +16,7 @@ dev = [
 ]
 automation = [
     "playwright>=1.44",
+    "selenium>=4.22",
     "gspread>=6.1",
     "google-auth>=2.29",
 ]

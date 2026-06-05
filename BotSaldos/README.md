@@ -9,6 +9,8 @@ El proyecto maneja informacion sensible. La prioridad inicial es construir una b
 Crear un bot en Python que:
 
 - consulte DolarApi para obtener la cotizacion del dolar
+- consulte Santander Personas con Playwright cuando este habilitado
+- registre el saldo monetario de Santander o una causa de fallo normalizada
 - valide que la respuesta incluya al menos un valor de cotizacion
 - actualice una planilla de Google Sheets usando una cuenta de servicio de GCP
 - registre ejecuciones, errores y resultados en logs locales
@@ -37,12 +39,15 @@ Crear un bot en Python que:
 
 4. Implementar integraciones
    - `integrations/sheets_client.py` para Google Sheets
-   - `integrations/web_client.py` para automatizaciones futuras con Playwright
+   - `integrations/web_client.py` para automatizacion base con Playwright
+   - `integrations/santander_client.py` para Santander Personas
    - `integrations/api_client.py` para consultar DolarApi
    - timeouts, errores visibles y logs sin secretos
 
 5. Implementar servicios de negocio
    - obtener cotizacion del dolar
+   - obtener saldo de Santander cuando este habilitado
+   - limitar reintentos automaticos ante fallos de login
    - validar presencia de un valor numerico de cotizacion
    - escribir la respuesta de la API en la planilla
    - generar resumen de ejecucion
@@ -84,6 +89,7 @@ BotSaldos/
 │   │   └── logging_config.py
 │   ├── integrations/
 │   │   ├── api_client.py
+│   │   ├── santander_client.py
 │   │   ├── sheets_client.py
 │   │   └── web_client.py
 │   ├── schemas/
@@ -93,6 +99,8 @@ BotSaldos/
 │   │   └── balance_sync_service.py
 │   └── main.py
 ├── docs/
+│   ├── playwright.md
+│   ├── santander.md
 │   ├── security.md
 │   └── sheets_contract.md
 ├── logs/
@@ -135,6 +143,13 @@ Para usar integraciones reales con Google Sheets, Playwright o APIs HTTP, instal
 pip install -e ".[automation]"
 ```
 
+Para preparar Playwright:
+
+```bash
+./scripts/install_playwright_browsers.sh
+./scripts/check_playwright.sh
+```
+
 Por defecto el proyecto corre en modo seguro:
 
 ```env
@@ -148,6 +163,12 @@ Con `DRY_RUN=true`, el bot puede obtener datos, pero no debe escribir en Google 
 - `GOOGLE_SHEETS_WORKSHEET_NAME`
 
 Antes de desactivar `DRY_RUN`, confirmar que la primera fila de la worksheet cumple el contrato documentado.
+
+Si el contrato de columnas cambia, actualizar la primera fila de la worksheet configurada con:
+
+```bash
+./scripts/update_sheet_headers.sh
+```
 
 ## Validacion De Setup
 
@@ -254,6 +275,68 @@ La respuesta esperada es un objeto JSON similar a:
 
 El bot no valida exhaustivamente todos los campos: solo exige que exista `venta` o `compra` con valor numerico antes de escribir.
 
+## Playwright
+
+La base de Playwright esta documentada en `docs/playwright.md`.
+
+Contexto recomendado para staging:
+
+```env
+PLAYWRIGHT_BROWSER=firefox
+PLAYWRIGHT_CHANNEL=
+PLAYWRIGHT_LAUNCH_ARGS=
+PLAYWRIGHT_LOCALE=es-AR
+PLAYWRIGHT_TIMEZONE_ID=America/Argentina/Buenos_Aires
+PLAYWRIGHT_VIEWPORT_WIDTH=1280
+PLAYWRIGHT_VIEWPORT_HEIGHT=720
+PLAYWRIGHT_ACCEPT_LANGUAGE=es-AR,es;q=0.9,en;q=0.8
+```
+
+Diagnostico alternativo con Selenium y Chrome visible:
+
+```bash
+./scripts/diagnose_santander_selenium.sh
+./scripts/diagnose_santander_selenium_manual.sh
+```
+
+Para guardar una sesion manual de un portal autenticado:
+
+```bash
+PLAYWRIGHT_LOGIN_URL="https://portal.example.com/login" ./scripts/playwright_login.sh
+```
+
+Las sesiones se guardan en `PLAYWRIGHT_STORAGE_STATE_PATH` y no deben commitearse.
+
+## Santander
+
+La integracion Santander esta documentada en `docs/santander.md`.
+
+Para habilitarla, completar en `.env`:
+
+```env
+SANTANDER_ENABLED=true
+SANTANDER_WEB_DRIVER=selenium
+SANTANDER_USERNAME=
+SANTANDER_PASSWORD=
+SANTANDER_USERNAME_SELECTOR=
+SANTANDER_PASSWORD_SELECTOR=
+SANTANDER_SUBMIT_SELECTOR=
+SANTANDER_INPUT_MODE=direct
+SANTANDER_SUBMIT_STRATEGY=click
+SANTANDER_TYPE_DELAY_MS=60
+SANTANDER_BALANCE_XPATH=
+SANTANDER_LOGOUT_SELECTOR=
+SANTANDER_LOGOUT_CONFIRM_SELECTOR=
+```
+
+El bot intenta login solo si no se supero `SANTANDER_MAX_LOGIN_ATTEMPTS`. Si falla dos veces por defecto, las siguientes ejecuciones saltean Santander y continuan con DolarApi.
+
+Luego de revision manual, resetear intentos con:
+
+```bash
+./scripts/reset_santander_attempts.sh
+```
+
 ## Contrato De Planilla
 
 El contrato operativo de Google Sheets esta documentado en `docs/sheets_contract.md`.
@@ -261,7 +344,7 @@ El contrato operativo de Google Sheets esta documentado en `docs/sheets_contract
 La worksheet por defecto es `Cotizaciones` y debe tener estos encabezados exactos en la primera fila:
 
 ```text
-fetched_at, compra, venta, casa, nombre, moneda, fecha_actualizacion, raw_response
+fetched_at, santander_balance, santander_currency, santander_status, santander_failure_reason, compra, venta, casa, nombre, moneda, fecha_actualizacion, raw_response
 ```
 
 ## Estado Actual
@@ -272,8 +355,8 @@ Existe un chequeo local de setup con `python -m app.check_setup` para validar cr
 
 Existe una escritura controlada de staging con `python -m app.staging_write`, pensada para validar permisos antes de usar el entrypoint programado.
 
-El servicio principal obtiene la cotizacion desde DolarApi, respeta `DRY_RUN` y devuelve un resumen estructurado de ejecucion.
+El servicio principal obtiene saldo de Santander cuando esta habilitado, continua con DolarApi, respeta `DRY_RUN` y devuelve un resumen estructurado de ejecucion.
 
 `ExternalApiClient` ya puede consultar la API HTTP configurable con timeout, validar que exista una cotizacion numerica y devolver la respuesta cruda.
 
-Las integraciones web especificas se implementaran en pasos posteriores.
+La primera integracion web especifica es Santander Personas, con selectores configurables por entorno y limite de intentos persistido.

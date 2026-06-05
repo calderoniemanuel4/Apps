@@ -10,6 +10,7 @@ from app.core.config import Settings
 from app.core.logging_config import configure_logging
 from app.integrations.api_client import ExternalApiClient
 from app.integrations.sheets_client import SheetsClient
+from app.integrations.web_client import WebClient
 
 
 class QuoteSource(Protocol):
@@ -45,6 +46,7 @@ def run_setup_checks(
     checks.append(_check_credentials_path(settings.google_application_credentials))
     checks.append(_check_spreadsheet_id(settings.google_sheets_spreadsheet_id))
     checks.append(_check_api(api_client or ExternalApiClient(settings)))
+    checks.append(_check_playwright_storage_state(WebClient(settings)))
 
     if settings.google_application_credentials and settings.google_sheets_spreadsheet_id:
         checks.append(_check_google_sheets(sheets_client or SheetsClient(settings)))
@@ -140,6 +142,21 @@ def _check_google_sheets(sheets_client: WorksheetValidator) -> SetupCheck:
         name="google_sheets_access",
         ok=True,
         message=f"Worksheet accesible con {len(headers)} encabezados validos.",
+    )
+
+
+def _check_playwright_storage_state(web_client: WebClient) -> SetupCheck:
+    if web_client.has_storage_state():
+        return SetupCheck(
+            name="playwright_storage_state",
+            ok=True,
+            message="Storage state de Playwright encontrado.",
+        )
+
+    return SetupCheck(
+        name="playwright_storage_state",
+        ok=True,
+        message="Storage state no configurado aun; requerido solo para portales autenticados.",
     )
 
 

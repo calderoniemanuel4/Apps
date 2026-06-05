@@ -1,0 +1,226 @@
+"""Integracion Santander Personas usando Selenium."""
+
+from __future__ import annotations
+
+import logging
+import time
+from typing import Any
+from decimal import Decimal
+
+from selenium.common.exceptions import TimeoutException, WebDriverException
+from selenium.webdriver import ActionChains
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as ec
+from selenium.webdriver.support.ui import WebDriverWait
+
+from app.core.config import Settings
+from app.integrations.santander_client import (
+    SantanderClientError,
+    SantanderFailureReason,
+    parse_money,
+)
+from app.integrations.selenium_client import SeleniumClient, SeleniumClientError
+from app.schemas.transaction import BalanceStatus, MonetaryBalance
+
+logger = logging.getLogger(__name__)
+
+
+class SantanderSeleniumClient:
+    """Consulta saldo monetario de Santander con Selenium y Chrome."""
+
+    def __init__(self, settings: Settings, selenium_client: SeleniumClient | None = None) -> None:
+        self._settings = settings
+        self._selenium_client = selenium_client or SeleniumClient(settings)
+
+    def fetch_balance(self) -> MonetaryBalance:
+        """Ingresa a Santander, extrae saldo y cierra sesion."""
+        self._validate_configuration()
+        reached_home = False
+
+        try:
+            with self._selenium_client.page() as driver:
+                wait = WebDriverWait(driver, self._settings.selenium_page_load_timeout_ms / 1_000)
+                try:
+                    driver.get(self._settings.santander_login_url)
+                    self._fill_login(driver, wait)
+                    self._wait_for_home(driver, wait)
+                    reached_home = True
+                    balance_text = self._extract_balance_text(wait)
+                    print(balance_text)
+                    balance = MonetaryBalance(
+                        amount=Decimal(balance_text.replace('.','')),
+                        #amount=parse_money(balance_text),
+                        status=BalanceStatus.SUCCESS,
+                        source="santander",
+                    )
+                    logger.info("santander_balance_fetched driver=selenium")
+                    return balance
+                finally:
+                    if reached_home:
+                        self._logout_safely(driver, wait)
+        except SantanderClientError:
+            raise
+        except SeleniumClientError as exc:
+            raise SantanderClientError(
+                SantanderFailureReason.UNKNOWN,
+                f"No se pudo abrir navegador Selenium: {_sanitize_error(exc)}",
+            ) from exc
+        except TimeoutException as exc:
+            raise SantanderClientError(
+                SantanderFailureReason.TIMEOUT,
+                f"Santander no respondio dentro del timeout configurado: {_sanitize_error(exc)}",
+            ) from exc
+        except WebDriverException as exc:
+            raise SantanderClientError(
+                SantanderFailureReason.UNKNOWN,
+                f"Fallo Selenium al consultar Santander: {_sanitize_error(exc)}",
+            ) from exc
+
+    def _validate_configuration(self) -> None:
+        required_values = [
+            self._settings.santander_username,
+            self._settings.santander_password,
+            self._settings.santander_username_selector,
+            self._settings.santander_password_selector,
+            self._settings.santander_submit_selector,
+            self._settings.santander_balance_xpath,
+            self._settings.santander_logout_selector,
+            self._settings.santander_logout_confirm_selector,
+        ]
+        if any(not value for value in required_values):
+            raise SantanderClientError(
+                SantanderFailureReason.MISSING_CONFIGURATION,
+                "Falta configuracion requerida para Santander.",
+            )
+
+    def _fill_login(self, driver: Any, wait: WebDriverWait) -> None:
+        try:
+            user_input = wait.until(
+                ec.visibility_of_element_located(
+                    (By.XPATH, self._settings.santander_username_selector)
+                )
+            )
+            password_input = wait.until(
+                ec.visibility_of_element_located(
+                    (By.XPATH, self._settings.santander_password_selector)
+                )
+            )
+            if self._settings.santander_input_mode == "human":
+                self._fill_login_human_like(driver, wait, user_input, password_input)
+                return
+
+            user_input.clear()
+            user_input.send_keys(self._settings.santander_username)
+            password_input.clear()
+            password_input.send_keys(self._settings.santander_password)
+            self._submit_login(driver, wait, password_input)
+        except Exception as exc:
+            raise SantanderClientError(
+                SantanderFailureReason.LOGIN_FORM_NOT_FOUND,
+                "No se pudo completar el formulario de login de Santander.",
+            ) from exc
+
+    def _fill_login_human_like(
+        self,
+        driver: Any,
+        wait: WebDriverWait,
+        user_input: Any,
+        password_input: Any,
+    ) -> None:
+        delay_seconds = self._settings.santander_type_delay_ms / 1_000
+        self._click_and_type_human_like(
+            driver,
+            user_input,
+            self._settings.santander_username,
+            delay_seconds,
+        )
+        time.sleep(max(delay_seconds * 2, 0.12))
+        self._click_and_type_human_like(
+            driver,
+            password_input,
+            self._settings.santander_password,
+            delay_seconds,
+        )
+        time.sleep(max(delay_seconds * 4, 0.25))
+        self._submit_login(driver, wait, password_input)
+
+    def _click_and_type_human_like(
+        self,
+        driver: Any,
+        element: Any,
+        value: str | None,
+        delay_seconds: float,
+    ) -> None:
+        if value is None:
+            raise ValueError("Falta valor para completar login.")
+
+        ActionChains(driver).move_to_element(element).pause(0.15).click().perform()
+        element.clear()
+        for character in value:
+            element.send_keys(character)
+            time.sleep(delay_seconds)
+
+    def _submit_login(self, driver: Any, wait: WebDriverWait, password_input: Any) -> None:
+        if self._settings.santander_submit_strategy == "enter":
+            password_input.send_keys("\n")
+            return
+
+        submit_button = wait.until(
+            ec.element_to_be_clickable((By.XPATH, self._settings.santander_submit_selector))
+        )
+        ActionChains(driver).move_to_element(submit_button).pause(0.2).click().perform()
+
+    def _wait_for_home(self, driver: Any, wait: WebDriverWait) -> None:
+        try:
+            wait.until(
+                lambda current_driver: current_driver.current_url
+                == self._settings.santander_post_login_url
+            )
+        except TimeoutException as exc:
+            raise SantanderClientError(
+                SantanderFailureReason.LOGIN_NOT_COMPLETED,
+                f"Santander no redirigio a home. URL actual: {driver.current_url}",
+            ) from exc
+
+    def _extract_balance_text(self, wait: WebDriverWait) -> str:
+        try:
+            balance_element = wait.until(
+                ec.visibility_of_element_located((By.XPATH, self._settings.santander_balance_xpath))
+            )
+            balance_text = str(balance_element.text).strip()
+        except TimeoutException as exc:
+            raise SantanderClientError(
+                SantanderFailureReason.BALANCE_NOT_FOUND,
+                "No se encontro el saldo con el XPath configurado.",
+            ) from exc
+
+        if not balance_text:
+            raise SantanderClientError(
+                SantanderFailureReason.BALANCE_NOT_FOUND,
+                "No se encontro texto de saldo en Santander.",
+            )
+        return balance_text
+
+    def _logout_safely(self, driver: Any, wait: WebDriverWait) -> None:
+        try:
+            logout_button = wait.until(
+                ec.element_to_be_clickable((By.XPATH, self._settings.santander_logout_selector))
+            )
+            ActionChains(driver).move_to_element(logout_button).pause(0.2).click().perform()
+            confirm_button = wait.until(
+                ec.element_to_be_clickable(
+                    (By.XPATH, self._settings.santander_logout_confirm_selector)
+                )
+            )
+            ActionChains(driver).move_to_element(confirm_button).pause(0.2).click().perform()
+            wait.until(lambda current_driver: "#!/login" in current_driver.current_url)
+            logger.info("santander_logout_completed driver=selenium")
+        except Exception:
+            logger.warning("santander_logout_failed driver=selenium", exc_info=True)
+
+
+def _sanitize_error(exc: Exception) -> str:
+    message = str(exc).replace("\n", " ")
+    if len(message) > 300:
+        return f"{message[:300]}..."
+    return message

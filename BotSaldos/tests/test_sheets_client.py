@@ -16,6 +16,8 @@ class FakeWorksheet:
         self._headers = headers
         self._fail_on_append = fail_on_append
         self.appended_rows: list[list[str]] | None = None
+        self.updated_values: list[list[str]] | None = None
+        self.updated_range: str | None = None
 
     def row_values(self, row: int) -> list[str]:
         assert row == 1
@@ -25,6 +27,16 @@ class FakeWorksheet:
         if self._fail_on_append:
             raise FakeGspreadError("api unavailable")
         self.appended_rows = rows
+        self.value_input_option = value_input_option
+
+    def update(
+        self,
+        values: list[list[str]],
+        range_name: str,
+        value_input_option: str,
+    ) -> None:
+        self.updated_values = values
+        self.updated_range = range_name
         self.value_input_option = value_input_option
 
 
@@ -72,6 +84,10 @@ def test_append_dollar_quote_validates_headers_and_appends_row() -> None:
     assert worksheet.appended_rows is not None
     row = worksheet.appended_rows[0]
     assert row[1:] == [
+        "",
+        "ARS",
+        "skipped",
+        "",
         "1410",
         "1430",
         "oficial",
@@ -115,6 +131,21 @@ def test_append_dollar_quote_requires_spreadsheet_id() -> None:
 
     with pytest.raises(SheetsClientError, match="GOOGLE_SHEETS_SPREADSHEET_ID"):
         client.append_dollar_quote(_dollar_quote())
+
+
+def test_update_configured_headers_writes_expected_first_row() -> None:
+    worksheet = FakeWorksheet(headers=["old"])
+    spreadsheet = FakeSpreadsheet(worksheet=worksheet)
+    gspread_client = FakeGspreadClient(spreadsheet=spreadsheet)
+    settings = Settings(_env_file=None, GOOGLE_SHEETS_SPREADSHEET_ID="sheet-id")
+    client = SheetsClient(settings=settings, gspread_client=gspread_client)
+
+    headers = client.update_configured_headers()
+
+    assert headers == list(USD_QUOTE_WORKSHEET_HEADERS)
+    assert worksheet.updated_values == [list(USD_QUOTE_WORKSHEET_HEADERS)]
+    assert worksheet.updated_range == "A1"
+    assert worksheet.value_input_option == "RAW"
 
 
 def _dollar_quote() -> dict[str, object]:

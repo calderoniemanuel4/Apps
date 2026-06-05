@@ -9,6 +9,7 @@ from app.schemas.sheet_contract import (
     WorksheetContract,
     dollar_quote_to_sheet_row,
 )
+from app.schemas.transaction import MonetaryBalance
 
 logger = logging.getLogger(__name__)
 
@@ -30,14 +31,22 @@ class SheetsClient:
         self._worksheet_contract = worksheet_contract
         self._gspread_client = gspread_client
 
-    def append_dollar_quote(self, quote: dict[str, object]) -> int:
+    def append_dollar_quote(
+        self,
+        quote: dict[str, object],
+        santander_balance: MonetaryBalance | None = None,
+    ) -> int:
         """Escribe la respuesta de cotizacion en la planilla."""
         try:
             worksheet = self._get_worksheet()
             headers = worksheet.row_values(1)
             self.validate_headers(headers)
 
-            worksheet.append_rows([dollar_quote_to_sheet_row(quote)], value_input_option="RAW")
+            row = dollar_quote_to_sheet_row(
+                quote=quote,
+                santander_balance=santander_balance,
+            )
+            worksheet.append_rows([row], value_input_option="RAW")
             logger.info("dollar_quote_appended_to_sheet")
             return 1
         except Exception as exc:
@@ -56,6 +65,19 @@ class SheetsClient:
         except Exception as exc:
             if self._is_gspread_exception(exc):
                 raise SheetsClientError("No se pudo validar Google Sheets") from exc
+            raise
+
+    def update_configured_headers(self) -> list[str]:
+        """Actualiza la primera fila con los encabezados esperados."""
+        try:
+            worksheet = self._get_worksheet()
+            headers = list(self._worksheet_contract.required_headers)
+            worksheet.update([headers], "A1", value_input_option="RAW")
+            logger.info("google_sheets_headers_updated")
+            return headers
+        except Exception as exc:
+            if self._is_gspread_exception(exc):
+                raise SheetsClientError("No se pudieron actualizar headers en Google Sheets") from exc
             raise
 
     def validate_headers(self, headers: list[str]) -> None:

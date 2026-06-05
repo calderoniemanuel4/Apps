@@ -6,9 +6,15 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from app.schemas.transaction import MonetaryBalance
+
 
 USD_QUOTE_WORKSHEET_HEADERS: tuple[str, ...] = (
     "fetched_at",
+    "santander_balance",
+    "santander_currency",
+    "santander_status",
+    "santander_failure_reason",
     "compra",
     "venta",
     "casa",
@@ -51,12 +57,18 @@ USD_QUOTE_WORKSHEET_CONTRACT = WorksheetContract(
 
 def dollar_quote_to_sheet_row(
     quote: dict[str, object],
+    santander_balance: MonetaryBalance | None = None,
     fetched_at: datetime | None = None,
 ) -> list[str]:
     """Convierte la respuesta cruda de DolarApi a una fila estable para Google Sheets."""
     observed_at = fetched_at or datetime.now(timezone.utc)
+    balance = santander_balance or MonetaryBalance(status="skipped", source="santander")
     return [
         observed_at.isoformat(),
+        _stringify_optional(balance.amount),
+        balance.currency,
+        balance.status.value,
+        _stringify_optional(balance.failure_reason),
         _stringify_optional(quote.get("compra")),
         _stringify_optional(quote.get("venta")),
         _stringify_optional(quote.get("casa")),

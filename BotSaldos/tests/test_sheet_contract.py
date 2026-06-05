@@ -9,6 +9,7 @@ from app.schemas.sheet_contract import (
     USD_QUOTE_WORKSHEET_HEADERS,
     dollar_quote_to_sheet_row,
 )
+from app.schemas.transaction import BalanceStatus, MonetaryBalance
 
 
 def test_usd_quote_worksheet_contract_accepts_expected_headers() -> None:
@@ -37,6 +38,10 @@ def test_dollar_quote_to_sheet_row_includes_api_response() -> None:
 
     assert row == [
         "2026-06-02T12:00:00+00:00",
+        "",
+        "ARS",
+        "skipped",
+        "",
         "1410",
         "1430",
         "oficial",
@@ -46,3 +51,17 @@ def test_dollar_quote_to_sheet_row_includes_api_response() -> None:
         json.dumps(quote, ensure_ascii=True, sort_keys=True),
     ]
 
+
+def test_dollar_quote_to_sheet_row_includes_santander_balance() -> None:
+    quote = {"venta": 1430}
+    balance = MonetaryBalance(
+        amount="123456.78",
+        currency="ARS",
+        status=BalanceStatus.SUCCESS,
+        source="santander",
+    )
+    fetched_at = datetime(2026, 6, 2, 12, 0, tzinfo=timezone.utc)
+
+    row = dollar_quote_to_sheet_row(quote, santander_balance=balance, fetched_at=fetched_at)
+
+    assert row[1:5] == ["123456.78", "ARS", "success", ""]

@@ -1,26 +1,25 @@
-"""Esquemas para movimientos financieros normalizados."""
+"""Esquemas simples para saldos monetarios."""
 
-from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 
-class TransactionType(StrEnum):
-    """Tipo de movimiento financiero."""
+class BalanceStatus(StrEnum):
+    """Estado de consulta de saldo web."""
 
-    INCOME = "income"
-    EXPENSE = "expense"
+    SUCCESS = "success"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+    BLOCKED = "blocked"
 
 
-class Transaction(BaseModel):
-    """Movimiento normalizado listo para validacion y escritura."""
+class MonetaryBalance(BaseModel):
+    """Saldo monetario normalizado desde un portal web."""
 
-    occurred_on: date
-    description: str = Field(min_length=1, max_length=300)
-    amount: Decimal
+    amount: Decimal | None = None
     currency: str = Field(default="ARS", min_length=3, max_length=3)
-    transaction_type: TransactionType
-    source: str = Field(min_length=1, max_length=100)
-    external_id: str | None = Field(default=None, max_length=200)
+    source: str = Field(default="santander", min_length=1, max_length=100)
+    status: BalanceStatus
+    failure_reason: str | None = Field(default=None, max_length=200)
