@@ -5,8 +5,8 @@ from types import TracebackType
 import pytest
 
 from app.core.config import Settings
-from app.integrations.santander_client import SantanderClientError, SantanderFailureReason
-from app.integrations.santander_selenium_client import SantanderSeleniumClient
+from app.integrations.balance_portal import SantanderClientError, SantanderFailureReason
+from app.integrations.santander_selenium_client import SantanderSeleniumClient, _is_logged_out
 
 
 def test_fetch_balance_logs_out_before_closing_driver() -> None:
@@ -41,6 +41,25 @@ def test_fetch_balance_logs_out_when_balance_xpath_fails() -> None:
     assert exc_info.value.reason == SantanderFailureReason.BALANCE_NOT_FOUND
     assert driver.logout_called is True
     assert driver.closed is True
+
+
+def test_is_logged_out_accepts_login_url() -> None:
+    assert _is_logged_out(FakeDriver(current_url="https://example.com/#!/login")) is True
+
+
+def test_is_logged_out_accepts_login_body_text() -> None:
+    driver = FakeDriver(current_url="https://example.com/#!/home", body_text="Inicio de Sesión")
+
+    assert _is_logged_out(driver) is True
+
+
+def test_is_logged_out_accepts_configured_logout_url() -> None:
+    driver = FakeDriver(current_url="https://www.santander.com.ar/personas/logout-plan-sueldo")
+
+    assert _is_logged_out(
+        driver,
+        "https://www.santander.com.ar/personas/logout-plan-sueldo",
+    ) is True
 
 
 class FakeSantanderSeleniumClient(SantanderSeleniumClient):
@@ -98,12 +117,22 @@ class FakePageContext:
 
 
 class FakeDriver:
-    def __init__(self) -> None:
+    def __init__(self, current_url: str = "", body_text: str = "") -> None:
         self.closed = False
         self.logout_called = False
+        self.current_url = current_url
+        self._body_text = body_text
 
     def get(self, url: str) -> None:
         self.url = url
+
+    def find_element(self, by: object, value: str) -> "FakeElement":
+        return FakeElement(text=self._body_text)
+
+
+class FakeElement:
+    def __init__(self, text: str = "") -> None:
+        self.text = text
 
 
 def _settings() -> Settings:

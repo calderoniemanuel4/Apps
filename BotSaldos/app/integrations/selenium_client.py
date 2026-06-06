@@ -1,4 +1,4 @@
-"""Automatizacion web alternativa con Selenium."""
+"""Automatizacion web base con Selenium."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ class SeleniumClientError(RuntimeError):
 
 
 class SeleniumClient:
-    """Cliente base Selenium para diagnosticar portales sensibles a Playwright."""
+    """Cliente base Selenium para automatizar portales web."""
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings

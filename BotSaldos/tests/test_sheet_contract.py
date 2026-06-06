@@ -8,6 +8,7 @@ from app.schemas.sheet_contract import (
     USD_QUOTE_WORKSHEET_CONTRACT,
     USD_QUOTE_WORKSHEET_HEADERS,
     dollar_quote_to_sheet_row,
+    _format_sheet_datetime,
 )
 from app.schemas.transaction import BalanceStatus, MonetaryBalance
 
@@ -37,7 +38,7 @@ def test_dollar_quote_to_sheet_row_includes_api_response() -> None:
     row = dollar_quote_to_sheet_row(quote, fetched_at=fetched_at)
 
     assert row == [
-        "2026-06-02T12:00:00+00:00",
+        "02-06-2026  09:00:00",
         "",
         "ARS",
         "skipped",
@@ -65,3 +66,9 @@ def test_dollar_quote_to_sheet_row_includes_santander_balance() -> None:
     row = dollar_quote_to_sheet_row(quote, santander_balance=balance, fetched_at=fetched_at)
 
     assert row[1:5] == ["123456.78", "ARS", "success", ""]
+
+
+def test_format_sheet_datetime_treats_naive_datetime_as_utc() -> None:
+    fetched_at = datetime(2026, 6, 2, 12, 0)
+
+    assert _format_sheet_datetime(fetched_at) == "02-06-2026  09:00:00"

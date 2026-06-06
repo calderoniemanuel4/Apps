@@ -29,7 +29,7 @@ raw_response
 
 ## Columnas
 
-- `fetched_at`: fecha y hora UTC en que el bot obtuvo la respuesta.
+- `fetched_at`: fecha y hora Argentina en que el bot obtuvo la respuesta, formato `dd-mm-yyyy  hh:mm:ss`.
 - `santander_balance`: saldo extraido desde Santander cuando la consulta web fue exitosa.
 - `santander_currency`: moneda del saldo de Santander. Valor esperado inicial: `ARS`.
 - `santander_status`: `success`, `skipped`, `failed` o `blocked`.

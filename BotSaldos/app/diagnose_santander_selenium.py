@@ -209,7 +209,8 @@ def _logout(driver: object, wait: WebDriverWait, settings: Settings) -> bool:
             ec.element_to_be_clickable((By.XPATH, settings.santander_logout_confirm_selector))
         )
         ActionChains(driver).move_to_element(confirm_button).pause(0.2).click().perform()
-        wait.until(lambda current_driver: "#!/login" in current_driver.current_url)
+        logout_wait = WebDriverWait(driver, settings.santander_logout_timeout_ms / 1_000)
+        logout_wait.until(_logged_out_condition(settings.santander_logout_success_url))
         return True
     except TimeoutException:
         return False
@@ -224,6 +225,26 @@ def _capture_page_state(driver: object, settings: Settings, stage: str) -> dict[
         "login_form": _safe_execute_script(driver, _login_form_script(settings)),
         "visible_text_summary": _visible_text_summary(driver),
     }
+
+
+def _logged_out_condition(expected_url: str | None = None) -> object:
+    def is_logged_out(driver: object) -> bool:
+        return _is_logged_out(driver, expected_url)
+
+    return is_logged_out
+
+
+def _is_logged_out(driver: object, expected_url: str | None = None) -> bool:
+    current_url = str(driver.current_url)
+    if expected_url is not None and current_url.startswith(expected_url):
+        return True
+    if "#!/login" in current_url or "logout" in current_url.lower():
+        return True
+    try:
+        body_text = driver.find_element(By.TAG_NAME, "body").text
+    except Exception:
+        return False
+    return "inicio de sesión" in body_text.lower() or "inicio de sesion" in body_text.lower()
 
 
 def _safe_execute_script(driver: object, script: str) -> object:

@@ -9,7 +9,7 @@ El proyecto maneja informacion sensible. La prioridad inicial es construir una b
 Crear un bot en Python que:
 
 - consulte DolarApi para obtener la cotizacion del dolar
-- consulte Santander Personas con Playwright cuando este habilitado
+- consulte Santander Personas con Selenium cuando este habilitado
 - registre el saldo monetario de Santander o una causa de fallo normalizada
 - valide que la respuesta incluya al menos un valor de cotizacion
 - actualice una planilla de Google Sheets usando una cuenta de servicio de GCP
@@ -39,8 +39,9 @@ Crear un bot en Python que:
 
 4. Implementar integraciones
    - `integrations/sheets_client.py` para Google Sheets
-   - `integrations/web_client.py` para automatizacion base con Playwright
-   - `integrations/santander_client.py` para Santander Personas
+   - `integrations/selenium_client.py` para automatizacion base con Selenium
+   - `integrations/santander_selenium_client.py` para Santander Personas
+   - `integrations/balance_portal.py` para contratos compartidos de portales de saldos
    - `integrations/api_client.py` para consultar DolarApi
    - timeouts, errores visibles y logs sin secretos
 
@@ -68,7 +69,7 @@ Crear un bot en Python que:
 
 Reglas obligatorias del proyecto:
 
-- Nunca commitear credenciales JSON, `.env`, cookies, sesiones de Playwright ni logs con datos sensibles.
+- Nunca commitear credenciales JSON, `.env`, cookies, perfiles de navegador ni logs con datos sensibles.
 - Usar una cuenta de servicio de GCP con permisos minimos.
 - Compartir la planilla solo con la cuenta de servicio necesaria.
 - Guardar secretos fuera del repositorio, por ejemplo en `.env` local o en un secret manager si luego se despliega.
@@ -77,7 +78,7 @@ Reglas obligatorias del proyecto:
 - Mantener `DRY_RUN=true` hasta validar credenciales, planilla y mapeo de columnas.
 - Diseñar escrituras idempotentes para evitar duplicados si cron ejecuta el script mas de una vez.
 - Preferir APIs oficiales cuando existan antes que scraping con login.
-- Mantener sesiones Playwright en una carpeta ignorada por Git y con permisos locales restringidos.
+- Preferir sesiones efimeras de navegador y cerrar sesion al terminar cada consulta.
 
 ## Estructura
 
@@ -89,9 +90,10 @@ BotSaldos/
 │   │   └── logging_config.py
 │   ├── integrations/
 │   │   ├── api_client.py
-│   │   ├── santander_client.py
-│   │   ├── sheets_client.py
-│   │   └── web_client.py
+│   │   ├── balance_portal.py
+│   │   ├── santander_selenium_client.py
+│   │   ├── selenium_client.py
+│   │   └── sheets_client.py
 │   ├── schemas/
 │   │   ├── sheet_contract.py
 │   │   └── transaction.py
@@ -99,7 +101,6 @@ BotSaldos/
 │   │   └── balance_sync_service.py
 │   └── main.py
 ├── docs/
-│   ├── playwright.md
 │   ├── santander.md
 │   ├── security.md
 │   └── sheets_contract.md
@@ -123,7 +124,7 @@ Requisitos previstos:
 - Python 3.11+
 - credenciales JSON de cuenta de servicio de GCP
 - acceso a la planilla de Google Sheets compartida con esa cuenta
-- Playwright instalado solo cuando se implemente automatizacion web
+- Google Chrome instalado localmente para automatizacion Selenium
 
 Pasos iniciales:
 
@@ -137,17 +138,10 @@ cp .env.example .env
 
 Luego completar `.env` con rutas y datos locales. No commitear `.env`.
 
-Para usar integraciones reales con Google Sheets, Playwright o APIs HTTP, instalar tambien:
+Para usar integraciones reales con Google Sheets, Selenium o APIs HTTP, instalar tambien:
 
 ```bash
 pip install -e ".[automation]"
-```
-
-Para preparar Playwright:
-
-```bash
-./scripts/install_playwright_browsers.sh
-./scripts/check_playwright.sh
 ```
 
 Por defecto el proyecto corre en modo seguro:
@@ -275,37 +269,22 @@ La respuesta esperada es un objeto JSON similar a:
 
 El bot no valida exhaustivamente todos los campos: solo exige que exista `venta` o `compra` con valor numerico antes de escribir.
 
-## Playwright
+## Selenium
 
-La base de Playwright esta documentada en `docs/playwright.md`.
+La automatizacion web usa Selenium con Chrome visible por defecto. El flujo comun de cada cuenta es:
 
-Contexto recomendado para staging:
+1. abrir URL de login
+2. completar usuario y password
+3. esperar la URL o pantalla posterior al login
+4. extraer saldo por XPath configurable
+5. cerrar sesion y confirmar logout con una espera corta
 
-```env
-PLAYWRIGHT_BROWSER=firefox
-PLAYWRIGHT_CHANNEL=
-PLAYWRIGHT_LAUNCH_ARGS=
-PLAYWRIGHT_LOCALE=es-AR
-PLAYWRIGHT_TIMEZONE_ID=America/Argentina/Buenos_Aires
-PLAYWRIGHT_VIEWPORT_WIDTH=1280
-PLAYWRIGHT_VIEWPORT_HEIGHT=720
-PLAYWRIGHT_ACCEPT_LANGUAGE=es-AR,es;q=0.9,en;q=0.8
-```
-
-Diagnostico alternativo con Selenium y Chrome visible:
+Diagnostico con Chrome visible:
 
 ```bash
 ./scripts/diagnose_santander_selenium.sh
 ./scripts/diagnose_santander_selenium_manual.sh
 ```
-
-Para guardar una sesion manual de un portal autenticado:
-
-```bash
-PLAYWRIGHT_LOGIN_URL="https://portal.example.com/login" ./scripts/playwright_login.sh
-```
-
-Las sesiones se guardan en `PLAYWRIGHT_STORAGE_STATE_PATH` y no deben commitearse.
 
 ## Santander
 
@@ -315,7 +294,6 @@ Para habilitarla, completar en `.env`:
 
 ```env
 SANTANDER_ENABLED=true
-SANTANDER_WEB_DRIVER=selenium
 SANTANDER_USERNAME=
 SANTANDER_PASSWORD=
 SANTANDER_USERNAME_SELECTOR=

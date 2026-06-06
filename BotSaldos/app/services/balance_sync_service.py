@@ -7,7 +7,7 @@ from typing import Protocol
 from app.core.config import Settings
 from app.core.login_attempt_state import LoginAttemptState
 from app.integrations.api_client import ExternalApiClient
-from app.integrations.santander_client import SantanderClient, SantanderClientError
+from app.integrations.balance_portal import SantanderClientError
 from app.integrations.santander_selenium_client import SantanderSeleniumClient
 from app.integrations.sheets_client import SheetsClient
 from app.schemas.transaction import BalanceStatus, MonetaryBalance
@@ -172,9 +172,7 @@ def _sanitize_log_message(message: str) -> str:
 
 
 def _build_santander_client(settings: Settings) -> SantanderBalanceSource:
-    if settings.santander_web_driver == "selenium":
-        return SantanderSeleniumClient(settings)
-    return SantanderClient(settings)
+    return SantanderSeleniumClient(settings)
 
 
 def _should_count_as_login_attempt(exc: SantanderClientError) -> bool:

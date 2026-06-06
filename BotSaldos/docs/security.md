@@ -14,10 +14,10 @@
 - Evitar permisos de editor sobre documentos no relacionados.
 - Mantener una planilla de staging para pruebas.
 
-## Playwright
+## Automatizacion Web
 
-- No guardar cookies o estados de sesion en Git.
-- Usar perfiles o storage state locales ignorados.
+- No guardar cookies, perfiles o estados de sesion en Git.
+- Usar sesiones efimeras y cerrar sesion al terminar cada consulta.
 - No loguear HTML completo de paginas autenticadas.
 - Preferir APIs oficiales antes que login automatizado cuando existan.
 

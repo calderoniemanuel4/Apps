@@ -31,29 +31,6 @@ class Settings(BaseSettings):
         alias="GOOGLE_SHEETS_WORKSHEET_NAME",
     )
 
-    playwright_headless: bool = Field(default=True, alias="PLAYWRIGHT_HEADLESS")
-    playwright_browser: str = Field(default="chromium", alias="PLAYWRIGHT_BROWSER")
-    playwright_channel: str | None = Field(default=None, alias="PLAYWRIGHT_CHANNEL")
-    playwright_launch_args: str | None = Field(default=None, alias="PLAYWRIGHT_LAUNCH_ARGS")
-    playwright_storage_state_path: Path = Field(
-        default=Path("playwright/.auth/storage_state.json"),
-        alias="PLAYWRIGHT_STORAGE_STATE_PATH",
-    )
-    playwright_default_timeout_ms: int = Field(
-        default=30_000,
-        alias="PLAYWRIGHT_DEFAULT_TIMEOUT_MS",
-    )
-    playwright_locale: str = Field(default="es-AR", alias="PLAYWRIGHT_LOCALE")
-    playwright_timezone_id: str = Field(
-        default="America/Argentina/Buenos_Aires",
-        alias="PLAYWRIGHT_TIMEZONE_ID",
-    )
-    playwright_viewport_width: int = Field(default=1280, alias="PLAYWRIGHT_VIEWPORT_WIDTH")
-    playwright_viewport_height: int = Field(default=720, alias="PLAYWRIGHT_VIEWPORT_HEIGHT")
-    playwright_accept_language: str = Field(
-        default="es-AR,es;q=0.9,en;q=0.8",
-        alias="PLAYWRIGHT_ACCEPT_LANGUAGE",
-    )
     selenium_headless: bool = Field(default=False, alias="SELENIUM_HEADLESS")
     selenium_page_load_timeout_ms: int = Field(
         default=30_000,
@@ -79,7 +56,6 @@ class Settings(BaseSettings):
         default="https://www2.personas.santander.com.ar/obp-webapp/angular/#!/home",
         alias="SANTANDER_POST_LOGIN_URL",
     )
-    santander_web_driver: str = Field(default="playwright", alias="SANTANDER_WEB_DRIVER")
     santander_username: str | None = Field(default=None, alias="SANTANDER_USERNAME")
     santander_password: str | None = Field(default=None, alias="SANTANDER_PASSWORD")
     santander_username_selector: str | None = Field(
@@ -103,6 +79,11 @@ class Settings(BaseSettings):
         default=None,
         alias="SANTANDER_LOGOUT_CONFIRM_SELECTOR",
     )
+    santander_logout_success_url: str | None = Field(
+        default=None,
+        alias="SANTANDER_LOGOUT_SUCCESS_URL",
+    )
+    santander_logout_timeout_ms: int = Field(default=3_000, alias="SANTANDER_LOGOUT_TIMEOUT_MS")
     santander_login_error_selector: str | None = Field(
         default=None,
         alias="SANTANDER_LOGIN_ERROR_SELECTOR",
@@ -140,82 +121,6 @@ class Settings(BaseSettings):
         if value < 1 or value > 120:
             raise ValueError("EXTERNAL_API_TIMEOUT_SECONDS debe estar entre 1 y 120")
         return value
-
-    @field_validator("playwright_default_timeout_ms")
-    @classmethod
-    def validate_playwright_timeout(cls, value: int) -> int:
-        """Evita timeouts de Playwright demasiado agresivos o excesivos."""
-        if value < 1_000 or value > 120_000:
-            raise ValueError("PLAYWRIGHT_DEFAULT_TIMEOUT_MS debe estar entre 1000 y 120000")
-        return value
-
-    @field_validator("playwright_browser")
-    @classmethod
-    def validate_playwright_browser(cls, value: str) -> str:
-        """Valida el motor de navegador usado por Playwright."""
-        normalized = value.lower()
-        allowed_browsers = {"chromium", "firefox", "webkit"}
-        if normalized not in allowed_browsers:
-            raise ValueError(
-                f"PLAYWRIGHT_BROWSER debe ser uno de: {', '.join(sorted(allowed_browsers))}"
-            )
-        return normalized
-
-    @field_validator("playwright_channel", mode="before")
-    @classmethod
-    def normalize_playwright_channel(cls, value: str | None) -> str | None:
-        """Normaliza el canal del navegador Playwright."""
-        if value is None:
-            return None
-        normalized = str(value).strip().lower()
-        if not normalized:
-            return None
-        allowed_channels = {
-            "chrome",
-            "chrome-beta",
-            "chrome-dev",
-            "chrome-canary",
-            "msedge",
-            "msedge-beta",
-            "msedge-dev",
-            "msedge-canary",
-        }
-        if normalized not in allowed_channels:
-            raise ValueError(
-                f"PLAYWRIGHT_CHANNEL debe ser uno de: {', '.join(sorted(allowed_channels))}"
-            )
-        return normalized
-
-    @field_validator("playwright_launch_args", mode="before")
-    @classmethod
-    def normalize_playwright_launch_args(cls, value: str | None) -> str | None:
-        """Normaliza flags opcionales de lanzamiento Playwright."""
-        if value is None:
-            return None
-        normalized = str(value).strip()
-        if not normalized:
-            return None
-        parsed_args = shlex.split(normalized)
-        if any(not arg.startswith("--") for arg in parsed_args):
-            raise ValueError("PLAYWRIGHT_LAUNCH_ARGS solo acepta flags que empiecen con --")
-        return " ".join(parsed_args)
-
-    @field_validator("playwright_viewport_width", "playwright_viewport_height")
-    @classmethod
-    def validate_playwright_viewport(cls, value: int) -> int:
-        """Evita viewports nulos o extremos en automatizaciones web."""
-        if value < 320 or value > 4_096:
-            raise ValueError("Las dimensiones de viewport Playwright deben estar entre 320 y 4096")
-        return value
-
-    @field_validator("playwright_locale", "playwright_timezone_id", "playwright_accept_language")
-    @classmethod
-    def validate_playwright_context_text(cls, value: str) -> str:
-        """Evita valores vacios para el contexto Playwright."""
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("La configuracion de contexto Playwright no puede estar vacia")
-        return normalized
 
     @field_validator("selenium_page_load_timeout_ms")
     @classmethod
@@ -273,16 +178,17 @@ class Settings(BaseSettings):
             raise ValueError("Las URLs de Santander deben ser HTTP o HTTPS")
         return value
 
-    @field_validator("santander_web_driver")
+    @field_validator("santander_logout_success_url", mode="before")
     @classmethod
-    def validate_santander_web_driver(cls, value: str) -> str:
-        """Valida el motor web usado por Santander."""
-        normalized = value.lower()
-        allowed_drivers = {"playwright", "selenium"}
-        if normalized not in allowed_drivers:
-            raise ValueError(
-                f"SANTANDER_WEB_DRIVER debe ser uno de: {', '.join(sorted(allowed_drivers))}"
-            )
+    def normalize_santander_logout_success_url(cls, value: str | None) -> str | None:
+        """Normaliza URL opcional de confirmacion de logout."""
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        if not normalized:
+            return None
+        if not normalized.startswith(("https://", "http://")):
+            raise ValueError("SANTANDER_LOGOUT_SUCCESS_URL debe ser una URL HTTP o HTTPS")
         return normalized
 
     @field_validator("santander_max_login_attempts")
@@ -291,6 +197,14 @@ class Settings(BaseSettings):
         """Evita limites de intentos nulos o excesivos."""
         if value < 1 or value > 10:
             raise ValueError("SANTANDER_MAX_LOGIN_ATTEMPTS debe estar entre 1 y 10")
+        return value
+
+    @field_validator("santander_logout_timeout_ms")
+    @classmethod
+    def validate_santander_logout_timeout(cls, value: int) -> int:
+        """Evita esperas largas al confirmar cierre de sesion."""
+        if value < 500 or value > 30_000:
+            raise ValueError("SANTANDER_LOGOUT_TIMEOUT_MS debe estar entre 500 y 30000")
         return value
 
     @field_validator("santander_type_delay_ms")
@@ -325,13 +239,6 @@ class Settings(BaseSettings):
                 f"SANTANDER_INPUT_MODE debe ser uno de: {', '.join(sorted(allowed_modes))}"
             )
         return normalized
-
-    @model_validator(mode="after")
-    def validate_playwright_channel_requirements(self) -> "Settings":
-        """Evita combinar canales Chromium con motores incompatibles."""
-        if self.playwright_channel is not None and self.playwright_browser != "chromium":
-            raise ValueError("PLAYWRIGHT_CHANNEL solo puede usarse con PLAYWRIGHT_BROWSER=chromium")
-        return self
 
     @model_validator(mode="after")
     def validate_santander_requirements(self) -> "Settings":

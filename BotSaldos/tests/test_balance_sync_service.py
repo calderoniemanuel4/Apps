@@ -2,7 +2,7 @@ from pathlib import Path
 
 from app.core.config import Settings
 from app.core.login_attempt_state import LoginAttemptState
-from app.integrations.santander_client import SantanderClientError, SantanderFailureReason
+from app.integrations.balance_portal import SantanderClientError, SantanderFailureReason
 from app.integrations.santander_selenium_client import SantanderSeleniumClient
 from app.schemas.transaction import BalanceStatus, MonetaryBalance
 from app.services.balance_sync_service import BalanceSyncService, _build_santander_client
@@ -160,11 +160,10 @@ def test_run_skips_santander_when_attempt_limit_is_reached(tmp_path: Path) -> No
     assert santander.calls == 0
 
 
-def test_build_santander_client_uses_selenium_when_configured(tmp_path: Path) -> None:
+def test_build_santander_client_uses_selenium(tmp_path: Path) -> None:
     settings = _settings_for_real_write(
         tmp_path,
         SANTANDER_ENABLED=True,
-        SANTANDER_WEB_DRIVER="selenium",
     )
 
     assert isinstance(_build_santander_client(settings), SantanderSeleniumClient)

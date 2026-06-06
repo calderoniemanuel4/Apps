@@ -5,9 +5,13 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from app.schemas.transaction import MonetaryBalance
 
+
+ARGENTINA_TIMEZONE = ZoneInfo("America/Argentina/Buenos_Aires")
+SHEET_DATETIME_FORMAT = "%d-%m-%Y  %H:%M:%S"
 
 USD_QUOTE_WORKSHEET_HEADERS: tuple[str, ...] = (
     "fetched_at",
@@ -64,7 +68,7 @@ def dollar_quote_to_sheet_row(
     observed_at = fetched_at or datetime.now(timezone.utc)
     balance = santander_balance or MonetaryBalance(status="skipped", source="santander")
     return [
-        observed_at.isoformat(),
+        _format_sheet_datetime(observed_at),
         _stringify_optional(balance.amount),
         balance.currency,
         balance.status.value,
@@ -84,3 +88,11 @@ def _stringify_optional(value: object) -> str:
     if value is None:
         return ""
     return str(value)
+
+
+def _format_sheet_datetime(value: datetime) -> str:
+    """Formatea fecha/hora para planilla en horario de Argentina."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    argentina_time = value.astimezone(ARGENTINA_TIMEZONE)
+    return argentina_time.strftime(SHEET_DATETIME_FORMAT)
