@@ -97,7 +97,39 @@ class Settings(BaseSettings):
         default=Path("tmp/santander_login_attempts.json"),
         alias="SANTANDER_ATTEMPT_STATE_FILE",
     )
-
+    galicia_enabled: bool = Field(default=False, alias="GALICIA_ENABLED")
+    galicia_login_url: str = Field(default="", alias="GALICIA_LOGIN_URL")
+    galicia_post_login_url: str = Field(default="", alias="GALICIA_POST_LOGIN_URL")
+    galicia_document_number: str | None = Field(default=None, alias="GALICIA_DOCUMENT_NUMBER")
+    galicia_document_number_selector: str | None = Field(
+        default=None,
+        alias="GALICIA_DOCUMENT_NUMBER_SELECTOR",
+    )
+    galicia_username: str | None = Field(default=None, alias="GALICIA_USERNAME")
+    galicia_password: str | None = Field(default=None, alias="GALICIA_PASSWORD")
+    galicia_username_selector: str | None = Field(default=None, alias="GALICIA_USERNAME_SELECTOR")
+    galicia_password_selector: str | None = Field(default=None, alias="GALICIA_PASSWORD_SELECTOR")
+    galicia_submit_selector: str | None = Field(default=None, alias="GALICIA_SUBMIT_SELECTOR")
+    galicia_input_mode: str = Field(default="human", alias="GALICIA_INPUT_MODE")
+    galicia_submit_strategy: str = Field(default="click", alias="GALICIA_SUBMIT_STRATEGY")
+    galicia_type_delay_ms: int = Field(default=60, alias="GALICIA_TYPE_DELAY_MS")
+    galicia_balance_xpath: str | None = Field(default=None, alias="GALICIA_BALANCE_XPATH")
+    galicia_logout_selector: str | None = Field(default=None, alias="GALICIA_LOGOUT_SELECTOR")
+    galicia_logout_success_url: str | None = Field(
+        default=None,
+        alias="GALICIA_LOGOUT_SUCCESS_URL",
+    )
+    galicia_logout_timeout_ms: int = Field(default=3_000, alias="GALICIA_LOGOUT_TIMEOUT_MS")
+    galicia_login_error_selector: str | None = Field(
+        default=None,
+        alias="GALICIA_LOGIN_ERROR_SELECTOR",
+    )
+    galicia_offline_selector: str | None = Field(default=None, alias="GALICIA_OFFLINE_SELECTOR")
+    galicia_max_login_attempts: int = Field(default=2, alias="GALICIA_MAX_LOGIN_ATTEMPTS")
+    galicia_attempt_state_file: Path = Field(
+        default=Path("tmp/galicia_login_attempts.json"),
+        alias="GALICIA_ATTEMPT_STATE_FILE",
+    )
     external_api_timeout_seconds: int = Field(default=20, alias="EXTERNAL_API_TIMEOUT_SECONDS")
     external_api_dollar_quote_url: str = Field(
         default="https://dolarapi.com/v1/dolares/oficial",
@@ -178,9 +210,20 @@ class Settings(BaseSettings):
             raise ValueError("Las URLs de Santander deben ser HTTP o HTTPS")
         return value
 
-    @field_validator("santander_logout_success_url", mode="before")
+    @field_validator("galicia_login_url", "galicia_post_login_url")
     @classmethod
-    def normalize_santander_logout_success_url(cls, value: str | None) -> str | None:
+    def validate_galicia_login_url(cls, value: str) -> str:
+        """Valida URLs de Galicia cuando estan configuradas."""
+        normalized = value.strip()
+        if not normalized:
+            return normalized
+        if not normalized.startswith(("https://", "http://")):
+            raise ValueError("Las URLs de Galicia deben ser HTTP o HTTPS")
+        return normalized
+
+    @field_validator("santander_logout_success_url", "galicia_logout_success_url", mode="before")
+    @classmethod
+    def normalize_logout_success_url(cls, value: str | None) -> str | None:
         """Normaliza URL opcional de confirmacion de logout."""
         if value is None:
             return None
@@ -188,55 +231,58 @@ class Settings(BaseSettings):
         if not normalized:
             return None
         if not normalized.startswith(("https://", "http://")):
-            raise ValueError("SANTANDER_LOGOUT_SUCCESS_URL debe ser una URL HTTP o HTTPS")
+            raise ValueError("La URL de logout debe ser HTTP o HTTPS")
         return normalized
 
-    @field_validator("santander_max_login_attempts")
+    @field_validator(
+        "santander_max_login_attempts",
+        "galicia_max_login_attempts",
+    )
     @classmethod
-    def validate_santander_attempts(cls, value: int) -> int:
+    def validate_max_login_attempts(cls, value: int) -> int:
         """Evita limites de intentos nulos o excesivos."""
         if value < 1 or value > 10:
-            raise ValueError("SANTANDER_MAX_LOGIN_ATTEMPTS debe estar entre 1 y 10")
+            raise ValueError("El maximo de intentos de login debe estar entre 1 y 10")
         return value
 
-    @field_validator("santander_logout_timeout_ms")
+    @field_validator("santander_logout_timeout_ms", "galicia_logout_timeout_ms")
     @classmethod
-    def validate_santander_logout_timeout(cls, value: int) -> int:
+    def validate_logout_timeout(cls, value: int) -> int:
         """Evita esperas largas al confirmar cierre de sesion."""
         if value < 500 or value > 30_000:
-            raise ValueError("SANTANDER_LOGOUT_TIMEOUT_MS debe estar entre 500 y 30000")
+            raise ValueError("El timeout de logout debe estar entre 500 y 30000")
         return value
 
-    @field_validator("santander_type_delay_ms")
+    @field_validator("santander_type_delay_ms", "galicia_type_delay_ms")
     @classmethod
-    def validate_santander_type_delay(cls, value: int) -> int:
+    def validate_type_delay(cls, value: int) -> int:
         """Evita demoras de tipeo negativas o excesivas."""
         if value < 0 or value > 1_000:
-            raise ValueError("SANTANDER_TYPE_DELAY_MS debe estar entre 0 y 1000")
+            raise ValueError("La demora de tipeo debe estar entre 0 y 1000")
         return value
 
-    @field_validator("santander_submit_strategy")
+    @field_validator("santander_submit_strategy", "galicia_submit_strategy")
     @classmethod
-    def validate_santander_submit_strategy(cls, value: str) -> str:
+    def validate_submit_strategy(cls, value: str) -> str:
         """Valida la forma de enviar el login."""
         normalized = value.lower()
         allowed_strategies = {"click", "enter"}
         if normalized not in allowed_strategies:
             raise ValueError(
-                "SANTANDER_SUBMIT_STRATEGY debe ser uno de: "
+                "La estrategia de submit debe ser una de: "
                 f"{', '.join(sorted(allowed_strategies))}"
             )
         return normalized
 
-    @field_validator("santander_input_mode")
+    @field_validator("santander_input_mode", "galicia_input_mode")
     @classmethod
-    def validate_santander_input_mode(cls, value: str) -> str:
+    def validate_input_mode(cls, value: str) -> str:
         """Valida el modo de ingreso de credenciales."""
         normalized = value.lower()
         allowed_modes = {"direct", "human"}
         if normalized not in allowed_modes:
             raise ValueError(
-                f"SANTANDER_INPUT_MODE debe ser uno de: {', '.join(sorted(allowed_modes))}"
+                f"El modo de ingreso debe ser uno de: {', '.join(sorted(allowed_modes))}"
             )
         return normalized
 
@@ -264,6 +310,36 @@ class Settings(BaseSettings):
         if missing_fields:
             joined_fields = ", ".join(missing_fields)
             raise ValueError(f"Falta configuracion requerida para Santander: {joined_fields}")
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_galicia_requirements(self) -> "Settings":
+        """Exige configuracion minima cuando Galicia esta habilitado."""
+        if not self.galicia_enabled:
+            return self
+
+        missing_fields: list[str] = []
+        required_values = {
+            "GALICIA_LOGIN_URL": self.galicia_login_url,
+            "GALICIA_POST_LOGIN_URL": self.galicia_post_login_url,
+            "GALICIA_DOCUMENT_NUMBER": self.galicia_document_number,
+            "GALICIA_DOCUMENT_NUMBER_SELECTOR": self.galicia_document_number_selector,
+            "GALICIA_USERNAME": self.galicia_username,
+            "GALICIA_PASSWORD": self.galicia_password,
+            "GALICIA_USERNAME_SELECTOR": self.galicia_username_selector,
+            "GALICIA_PASSWORD_SELECTOR": self.galicia_password_selector,
+            "GALICIA_SUBMIT_SELECTOR": self.galicia_submit_selector,
+            "GALICIA_BALANCE_XPATH": self.galicia_balance_xpath,
+            "GALICIA_LOGOUT_SELECTOR": self.galicia_logout_selector,
+        }
+        for field_name, field_value in required_values.items():
+            if not field_value:
+                missing_fields.append(field_name)
+
+        if missing_fields:
+            joined_fields = ", ".join(missing_fields)
+            raise ValueError(f"Falta configuracion requerida para Galicia: {joined_fields}")
 
         return self
 

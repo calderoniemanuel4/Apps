@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Mapping
 from zoneinfo import ZoneInfo
 
 from app.schemas.transaction import MonetaryBalance
@@ -19,6 +20,14 @@ USD_QUOTE_WORKSHEET_HEADERS: tuple[str, ...] = (
     "santander_currency",
     "santander_status",
     "santander_failure_reason",
+    "galicia_balance",
+    "galicia_currency",
+    "galicia_status",
+    "galicia_failure_reason",
+    "mercadopago_balance",
+    "mercadopago_currency",
+    "mercadopago_status",
+    "mercadopago_failure_reason",
     "compra",
     "venta",
     "casa",
@@ -62,17 +71,31 @@ USD_QUOTE_WORKSHEET_CONTRACT = WorksheetContract(
 def dollar_quote_to_sheet_row(
     quote: dict[str, object],
     santander_balance: MonetaryBalance | None = None,
+    balances: Mapping[str, MonetaryBalance] | None = None,
     fetched_at: datetime | None = None,
 ) -> list[str]:
     """Convierte la respuesta cruda de DolarApi a una fila estable para Google Sheets."""
     observed_at = fetched_at or datetime.now(timezone.utc)
-    balance = santander_balance or MonetaryBalance(status="skipped", source="santander")
+    portal_balances = dict(balances or {})
+    if santander_balance is not None:
+        portal_balances["santander"] = santander_balance
+    santander = portal_balances.get(
+        "santander",
+        MonetaryBalance(status="skipped", source="santander"),
+    )
+    galicia = portal_balances.get(
+        "galicia",
+        MonetaryBalance(status="skipped", source="galicia"),
+    )
+    mercadopago = portal_balances.get(
+        "mercadopago",
+        MonetaryBalance(status="skipped", source="mercadopago"),
+    )
     return [
         _format_sheet_datetime(observed_at),
-        _stringify_optional(balance.amount),
-        balance.currency,
-        balance.status.value,
-        _stringify_optional(balance.failure_reason),
+        *_balance_cells(santander),
+        *_balance_cells(galicia),
+        *_balance_cells(mercadopago),
         _stringify_optional(quote.get("compra")),
         _stringify_optional(quote.get("venta")),
         _stringify_optional(quote.get("casa")),
@@ -80,6 +103,15 @@ def dollar_quote_to_sheet_row(
         _stringify_optional(quote.get("moneda")),
         _stringify_optional(quote.get("fechaActualizacion")),
         json.dumps(quote, ensure_ascii=True, sort_keys=True),
+    ]
+
+
+def _balance_cells(balance: MonetaryBalance) -> list[str]:
+    return [
+        _stringify_optional(balance.amount),
+        balance.currency,
+        balance.status.value,
+        _stringify_optional(balance.failure_reason),
     ]
 
 

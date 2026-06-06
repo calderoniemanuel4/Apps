@@ -43,6 +43,14 @@ def test_dollar_quote_to_sheet_row_includes_api_response() -> None:
         "ARS",
         "skipped",
         "",
+        "",
+        "ARS",
+        "skipped",
+        "",
+        "",
+        "ARS",
+        "skipped",
+        "",
         "1410",
         "1430",
         "oficial",
@@ -66,6 +74,44 @@ def test_dollar_quote_to_sheet_row_includes_santander_balance() -> None:
     row = dollar_quote_to_sheet_row(quote, santander_balance=balance, fetched_at=fetched_at)
 
     assert row[1:5] == ["123456.78", "ARS", "success", ""]
+
+
+def test_dollar_quote_to_sheet_row_includes_galicia_balance() -> None:
+    quote = {"venta": 1430}
+    balance = MonetaryBalance(
+        amount="2222.33",
+        currency="ARS",
+        status=BalanceStatus.SUCCESS,
+        source="galicia",
+    )
+    fetched_at = datetime(2026, 6, 2, 12, 0, tzinfo=timezone.utc)
+
+    row = dollar_quote_to_sheet_row(
+        quote,
+        balances={"galicia": balance},
+        fetched_at=fetched_at,
+    )
+
+    assert row[5:9] == ["2222.33", "ARS", "success", ""]
+
+
+def test_dollar_quote_to_sheet_row_includes_mercadopago_balance() -> None:
+    quote = {"venta": 1430}
+    balance = MonetaryBalance(
+        amount="3333.44",
+        currency="ARS",
+        status=BalanceStatus.SUCCESS,
+        source="mercadopago",
+    )
+    fetched_at = datetime(2026, 6, 2, 12, 0, tzinfo=timezone.utc)
+
+    row = dollar_quote_to_sheet_row(
+        quote,
+        balances={"mercadopago": balance},
+        fetched_at=fetched_at,
+    )
+
+    assert row[9:13] == ["3333.44", "ARS", "success", ""]
 
 
 def test_format_sheet_datetime_treats_naive_datetime_as_utc() -> None:

@@ -31,6 +31,12 @@ def test_settings_defaults_are_safe_for_local_scaffold() -> None:
     assert settings.santander_logout_success_url is None
     assert settings.santander_logout_timeout_ms == 3_000
     assert settings.santander_post_login_url.endswith("#!/home")
+    assert settings.galicia_enabled is False
+    assert settings.galicia_login_url == ""
+    assert settings.galicia_input_mode == "human"
+    assert settings.galicia_submit_strategy == "click"
+    assert settings.galicia_type_delay_ms == 60
+    assert settings.galicia_attempt_state_file == Path("tmp/galicia_login_attempts.json")
 
 
 def test_real_write_requires_google_sheets_configuration() -> None:
@@ -77,31 +83,56 @@ def test_santander_enabled_requires_configuration() -> None:
         Settings(_env_file=None, SANTANDER_ENABLED=True)
 
 
+def test_galicia_enabled_requires_configuration() -> None:
+    with pytest.raises(ValidationError, match="Falta configuracion requerida para Galicia"):
+        Settings(_env_file=None, GALICIA_ENABLED=True)
+
+
+def test_galicia_enabled_accepts_required_configuration() -> None:
+    settings = Settings(
+        _env_file=None,
+        GALICIA_ENABLED=True,
+        GALICIA_LOGIN_URL="https://example.com/login",
+        GALICIA_POST_LOGIN_URL="https://example.com/home",
+        GALICIA_DOCUMENT_NUMBER="12345678",
+        GALICIA_DOCUMENT_NUMBER_SELECTOR="//input[@id='document']",
+        GALICIA_USERNAME="user",
+        GALICIA_PASSWORD="password",
+        GALICIA_USERNAME_SELECTOR="//input[@id='user']",
+        GALICIA_PASSWORD_SELECTOR="//input[@id='password']",
+        GALICIA_SUBMIT_SELECTOR="//button[@type='submit']",
+        GALICIA_BALANCE_XPATH="//span[@id='balance']",
+        GALICIA_LOGOUT_SELECTOR="//a[@id='logout']",
+    )
+
+    assert settings.galicia_enabled is True
+
+
 def test_santander_attempt_limit_is_bounded() -> None:
-    with pytest.raises(ValidationError, match="SANTANDER_MAX_LOGIN_ATTEMPTS"):
+    with pytest.raises(ValidationError, match="intentos de login"):
         Settings(_env_file=None, SANTANDER_MAX_LOGIN_ATTEMPTS=0)
 
 
 def test_santander_logout_timeout_is_bounded() -> None:
-    with pytest.raises(ValidationError, match="SANTANDER_LOGOUT_TIMEOUT_MS"):
+    with pytest.raises(ValidationError, match="timeout de logout"):
         Settings(_env_file=None, SANTANDER_LOGOUT_TIMEOUT_MS=100)
 
 
 def test_santander_logout_success_url_requires_http() -> None:
-    with pytest.raises(ValidationError, match="SANTANDER_LOGOUT_SUCCESS_URL"):
+    with pytest.raises(ValidationError, match="URL de logout"):
         Settings(_env_file=None, SANTANDER_LOGOUT_SUCCESS_URL="ftp://example.com/logout")
 
 
 def test_santander_type_delay_is_bounded() -> None:
-    with pytest.raises(ValidationError, match="SANTANDER_TYPE_DELAY_MS"):
+    with pytest.raises(ValidationError, match="demora de tipeo"):
         Settings(_env_file=None, SANTANDER_TYPE_DELAY_MS=-1)
 
 
 def test_santander_submit_strategy_is_bounded() -> None:
-    with pytest.raises(ValidationError, match="SANTANDER_SUBMIT_STRATEGY"):
+    with pytest.raises(ValidationError, match="estrategia de submit"):
         Settings(_env_file=None, SANTANDER_SUBMIT_STRATEGY="double_click")
 
 
 def test_santander_input_mode_is_bounded() -> None:
-    with pytest.raises(ValidationError, match="SANTANDER_INPUT_MODE"):
+    with pytest.raises(ValidationError, match="modo de ingreso"):
         Settings(_env_file=None, SANTANDER_INPUT_MODE="robot")

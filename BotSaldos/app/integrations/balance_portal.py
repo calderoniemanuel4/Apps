@@ -38,15 +38,19 @@ class BalancePortalConfig:
     source: str
     login_url: str
     post_login_url: str
-    username: str | None
-    password: str | None
-    username_selector: str | None
-    password_selector: str | None
-    submit_selector: str | None
-    balance_xpath: str | None
-    logout_selector: str | None
-    logout_confirm_selector: str | None
+    username: str | None = None
+    password: str | None = None
+    username_selector: str | None = None
+    password_selector: str | None = None
+    submit_selector: str | None = None
+    balance_xpath: str | None = None
+    logout_selector: str | None = None
+    logout_confirm_selector: str | None = None
+    document_number: str | None = None
+    document_number_selector: str | None = None
     logout_success_url: str | None = None
+    login_error_selector: str | None = None
+    offline_selector: str | None = None
     input_mode: str = "direct"
     submit_strategy: str = "click"
     type_delay_ms: int = 60

@@ -9,8 +9,8 @@ El proyecto maneja informacion sensible. La prioridad inicial es construir una b
 Crear un bot en Python que:
 
 - consulte DolarApi para obtener la cotizacion del dolar
-- consulte Santander Personas con Selenium cuando este habilitado
-- registre el saldo monetario de Santander o una causa de fallo normalizada
+- consulte portales bancarios con Selenium cuando esten habilitados
+- registre saldos monetarios o causas de fallo normalizadas por portal
 - valide que la respuesta incluya al menos un valor de cotizacion
 - actualice una planilla de Google Sheets usando una cuenta de servicio de GCP
 - registre ejecuciones, errores y resultados en logs locales
@@ -42,6 +42,7 @@ Crear un bot en Python que:
    - `integrations/selenium_client.py` para automatizacion base con Selenium
    - `integrations/santander_selenium_client.py` para Santander Personas
    - `integrations/balance_portal.py` para contratos compartidos de portales de saldos
+   - `integrations/galicia_selenium_client.py` para Galicia
    - `integrations/api_client.py` para consultar DolarApi
    - timeouts, errores visibles y logs sin secretos
 
@@ -91,6 +92,7 @@ BotSaldos/
 │   ├── integrations/
 │   │   ├── api_client.py
 │   │   ├── balance_portal.py
+│   │   ├── galicia_selenium_client.py
 │   │   ├── santander_selenium_client.py
 │   │   ├── selenium_client.py
 │   │   └── sheets_client.py
@@ -102,6 +104,7 @@ BotSaldos/
 │   └── main.py
 ├── docs/
 │   ├── santander.md
+│   ├── galicia.md
 │   ├── security.md
 │   └── sheets_contract.md
 ├── logs/
@@ -271,10 +274,10 @@ El bot no valida exhaustivamente todos los campos: solo exige que exista `venta`
 
 ## Selenium
 
-La automatizacion web usa Selenium con Chrome visible por defecto. El flujo comun de cada cuenta es:
+La automatizacion web usa Selenium con Chrome visible por defecto. El flujo comun de cada portal es:
 
 1. abrir URL de login
-2. completar usuario y password
+2. completar campos de login configurados
 3. esperar la URL o pantalla posterior al login
 4. extraer saldo por XPath configurable
 5. cerrar sesion y confirmar logout con una espera corta
@@ -315,6 +318,36 @@ Luego de revision manual, resetear intentos con:
 ./scripts/reset_santander_attempts.sh
 ```
 
+## Galicia
+
+La integracion Galicia esta documentada en `docs/galicia.md`.
+
+Para habilitarla, completar en `.env`:
+
+```env
+GALICIA_ENABLED=true
+GALICIA_LOGIN_URL=
+GALICIA_POST_LOGIN_URL=
+GALICIA_DOCUMENT_NUMBER=
+GALICIA_DOCUMENT_NUMBER_SELECTOR=
+GALICIA_USERNAME=
+GALICIA_PASSWORD=
+GALICIA_USERNAME_SELECTOR=
+GALICIA_PASSWORD_SELECTOR=
+GALICIA_SUBMIT_SELECTOR=
+GALICIA_INPUT_MODE=human
+GALICIA_SUBMIT_STRATEGY=click
+GALICIA_TYPE_DELAY_MS=60
+GALICIA_BALANCE_XPATH=
+GALICIA_LOGOUT_SELECTOR=
+```
+
+Galicia usa `GALICIA_ATTEMPT_STATE_FILE`, separado del estado de Santander. Para resetearlo:
+
+```bash
+./scripts/reset_galicia_attempts.sh
+```
+
 ## Contrato De Planilla
 
 El contrato operativo de Google Sheets esta documentado en `docs/sheets_contract.md`.
@@ -322,8 +355,10 @@ El contrato operativo de Google Sheets esta documentado en `docs/sheets_contract
 La worksheet por defecto es `Cotizaciones` y debe tener estos encabezados exactos en la primera fila:
 
 ```text
-fetched_at, santander_balance, santander_currency, santander_status, santander_failure_reason, compra, venta, casa, nombre, moneda, fecha_actualizacion, raw_response
+fetched_at, santander_balance, santander_currency, santander_status, santander_failure_reason, galicia_balance, galicia_currency, galicia_status, galicia_failure_reason, mercadopago_balance, mercadopago_currency, mercadopago_status, mercadopago_failure_reason, compra, venta, casa, nombre, moneda, fecha_actualizacion, raw_response
 ```
+
+Las columnas `mercadopago_*` quedan reservadas para la integracion por API.
 
 ## Estado Actual
 
@@ -333,8 +368,8 @@ Existe un chequeo local de setup con `python -m app.check_setup` para validar cr
 
 Existe una escritura controlada de staging con `python -m app.staging_write`, pensada para validar permisos antes de usar el entrypoint programado.
 
-El servicio principal obtiene saldo de Santander cuando esta habilitado, continua con DolarApi, respeta `DRY_RUN` y devuelve un resumen estructurado de ejecucion.
+El servicio principal obtiene saldos bancarios cuando cada portal esta habilitado, continua con DolarApi, respeta `DRY_RUN` y devuelve un resumen estructurado de ejecucion.
 
 `ExternalApiClient` ya puede consultar la API HTTP configurable con timeout, validar que exista una cotizacion numerica y devolver la respuesta cruda.
 
-La primera integracion web especifica es Santander Personas, con selectores configurables por entorno y limite de intentos persistido.
+Las integraciones web especificas disponibles son Santander Personas y Galicia, con selectores configurables por entorno y limite de intentos persistido por portal. Mercado Pago queda reservado para integracion por API.

@@ -35,6 +35,7 @@ class SheetsClient:
         self,
         quote: dict[str, object],
         santander_balance: MonetaryBalance | None = None,
+        balances: dict[str, MonetaryBalance] | None = None,
     ) -> int:
         """Escribe la respuesta de cotizacion en la planilla."""
         try:
@@ -45,6 +46,7 @@ class SheetsClient:
             row = dollar_quote_to_sheet_row(
                 quote=quote,
                 santander_balance=santander_balance,
+                balances=balances,
             )
             worksheet.append_rows([row], value_input_option="RAW")
             logger.info("dollar_quote_appended_to_sheet")

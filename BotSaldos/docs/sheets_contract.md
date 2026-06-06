@@ -18,6 +18,14 @@ santander_balance
 santander_currency
 santander_status
 santander_failure_reason
+galicia_balance
+galicia_currency
+galicia_status
+galicia_failure_reason
+mercadopago_balance
+mercadopago_currency
+mercadopago_status
+mercadopago_failure_reason
 compra
 venta
 casa
@@ -34,6 +42,14 @@ raw_response
 - `santander_currency`: moneda del saldo de Santander. Valor esperado inicial: `ARS`.
 - `santander_status`: `success`, `skipped`, `failed` o `blocked`.
 - `santander_failure_reason`: causa normalizada si Santander fallo o quedo bloqueado.
+- `galicia_balance`: saldo extraido desde Galicia cuando la consulta web fue exitosa.
+- `galicia_currency`: moneda del saldo de Galicia. Valor esperado inicial: `ARS`.
+- `galicia_status`: `success`, `skipped`, `failed` o `blocked`.
+- `galicia_failure_reason`: causa normalizada si Galicia fallo o quedo bloqueado.
+- `mercadopago_balance`: saldo obtenido desde Mercado Pago cuando la consulta por API fue exitosa.
+- `mercadopago_currency`: moneda del saldo de Mercado Pago. Valor esperado inicial: `ARS`.
+- `mercadopago_status`: `success`, `skipped`, `failed` o `blocked`.
+- `mercadopago_failure_reason`: causa normalizada si Mercado Pago fallo o quedo bloqueado.
 - `compra`: valor de compra devuelto por la API cuando exista.
 - `venta`: valor de venta devuelto por la API cuando exista.
 - `casa`: identificador de la cotizacion devuelto por la API.
@@ -46,9 +62,9 @@ raw_response
 
 - No escribir datos reales mientras `DRY_RUN=true`.
 - Validar encabezados antes de leer o escribir.
-- Consultar Santander solo si `SANTANDER_ENABLED=true` y no se supero el limite de intentos.
-- Si Santander falla, registrar causa y continuar con DolarApi.
-- Si Santander supera `SANTANDER_MAX_LOGIN_ATTEMPTS`, no volver a intentar hasta revision manual.
+- Consultar cada portal solo si su `*_ENABLED=true` y no se supero su limite de intentos.
+- Si un portal falla, registrar causa y continuar con DolarApi.
+- Si un portal supera `*_MAX_LOGIN_ATTEMPTS`, no volver a intentar ese portal hasta revision manual.
 - Validar que la respuesta de la API tenga al menos una cotizacion numerica antes de escribir.
 - Guardar la respuesta cruda para poder auditar cambios de formato de la API.
 - Probar primero contra una planilla de staging antes de usar la planilla real.

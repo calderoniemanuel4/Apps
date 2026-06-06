@@ -10,6 +10,7 @@ except  Exception :
 # //*[@id="Password"]
 # //*[@id="submitButton"]
 # https://onlinebanking.bancogalicia.com.ar/inicio
-# //*[@id="mainBox"]/h2[1]/strong  saldo galicia
+# //*[@id="mainBox"]/h2[1]/strong  saldo
 # //*[@id="LogOut_a"] cierra sesion
 # https://onlinebanking.bancogalicia.com.ar/login
+

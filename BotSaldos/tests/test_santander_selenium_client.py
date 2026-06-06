@@ -5,8 +5,16 @@ from types import TracebackType
 import pytest
 
 from app.core.config import Settings
-from app.integrations.balance_portal import SantanderClientError, SantanderFailureReason
-from app.integrations.santander_selenium_client import SantanderSeleniumClient, _is_logged_out
+from app.integrations.balance_portal import (
+    BalancePortalConfig,
+    SantanderClientError,
+    SantanderFailureReason,
+)
+from app.integrations.santander_selenium_client import (
+    SantanderSeleniumClient,
+    SeleniumBalancePortalClient,
+    _is_logged_out,
+)
 
 
 def test_fetch_balance_logs_out_before_closing_driver() -> None:
@@ -60,6 +68,41 @@ def test_is_logged_out_accepts_configured_logout_url() -> None:
         driver,
         "https://www.santander.com.ar/personas/logout-plan-sueldo",
     ) is True
+
+
+def test_logout_safely_allows_missing_confirm_selector(monkeypatch: pytest.MonkeyPatch) -> None:
+    driver = FakeDriver(current_url="https://example.com/logout")
+    wait = FakeWait()
+    client = SeleniumBalancePortalClient(
+        settings=_settings(),
+        portal_config=BalancePortalConfig(
+            source="galicia",
+            login_url="https://example.com/login",
+            post_login_url="https://example.com/home",
+            username="user",
+            password="password",
+            username_selector="//input[@id='user']",
+            password_selector="//input[@id='password']",
+            submit_selector="//button[@type='submit']",
+            balance_xpath="//span[@id='balance']",
+            logout_selector="//a[@id='logout']",
+            logout_success_url="https://example.com/logout",
+        ),
+        selenium_client=FakeSeleniumClient(driver),
+    )
+
+    monkeypatch.setattr(
+        "app.integrations.santander_selenium_client.ec.element_to_be_clickable",
+        lambda locator: locator,
+    )
+    monkeypatch.setattr(
+        "app.integrations.santander_selenium_client.ActionChains",
+        FakeActionChains,
+    )
+
+    client._logout_safely(driver, wait)
+
+    assert driver.clicked_xpaths == ["//a[@id='logout']"]
 
 
 class FakeSantanderSeleniumClient(SantanderSeleniumClient):
@@ -120,6 +163,7 @@ class FakeDriver:
     def __init__(self, current_url: str = "", body_text: str = "") -> None:
         self.closed = False
         self.logout_called = False
+        self.clicked_xpaths: list[str] = []
         self.current_url = current_url
         self._body_text = body_text
 
@@ -130,9 +174,36 @@ class FakeDriver:
         return FakeElement(text=self._body_text)
 
 
+class FakeWait:
+    def until(self, locator: tuple[object, str]) -> "FakeElement":
+        return FakeElement(xpath=locator[1])
+
+
+class FakeActionChains:
+    def __init__(self, driver: FakeDriver) -> None:
+        self._driver = driver
+        self._element: FakeElement | None = None
+
+    def move_to_element(self, element: "FakeElement") -> "FakeActionChains":
+        self._element = element
+        return self
+
+    def pause(self, seconds: float) -> "FakeActionChains":
+        return self
+
+    def click(self) -> "FakeActionChains":
+        assert self._element is not None
+        self._driver.clicked_xpaths.append(self._element.xpath)
+        return self
+
+    def perform(self) -> None:
+        return None
+
+
 class FakeElement:
-    def __init__(self, text: str = "") -> None:
+    def __init__(self, text: str = "", xpath: str = "") -> None:
         self.text = text
+        self.xpath = xpath
 
 
 def _settings() -> Settings:

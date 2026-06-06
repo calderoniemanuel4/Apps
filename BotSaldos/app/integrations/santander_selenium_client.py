@@ -82,15 +82,12 @@ class SeleniumBalancePortalClient:
 
     def _validate_configuration(self) -> None:
         required_values = [
-            self._portal_config.username,
-            self._portal_config.password,
-            self._portal_config.username_selector,
-            self._portal_config.password_selector,
             self._portal_config.submit_selector,
             self._portal_config.balance_xpath,
             self._portal_config.logout_selector,
-            self._portal_config.logout_confirm_selector,
         ]
+        for value, selector in self._login_fields():
+            required_values.extend([value, selector])
         if any(not value for value in required_values):
             raise SantanderClientError(
                 SantanderFailureReason.MISSING_CONFIGURATION,
@@ -99,25 +96,18 @@ class SeleniumBalancePortalClient:
 
     def _fill_login(self, driver: Any, wait: WebDriverWait) -> None:
         try:
-            user_input = wait.until(
-                ec.visibility_of_element_located(
-                    (By.XPATH, self._portal_config.username_selector)
-                )
-            )
-            password_input = wait.until(
-                ec.visibility_of_element_located(
-                    (By.XPATH, self._portal_config.password_selector)
-                )
-            )
+            input_elements = [
+                wait.until(ec.visibility_of_element_located((By.XPATH, selector)))
+                for _value, selector in self._login_fields()
+            ]
             if self._portal_config.input_mode == "human":
-                self._fill_login_human_like(driver, wait, user_input, password_input)
+                self._fill_login_human_like(driver, wait, input_elements)
                 return
 
-            user_input.clear()
-            user_input.send_keys(self._portal_config.username)
-            password_input.clear()
-            password_input.send_keys(self._portal_config.password)
-            self._submit_login(driver, wait, password_input)
+            for value, element in zip(self._login_values(), input_elements, strict=True):
+                element.clear()
+                element.send_keys(value)
+            self._submit_login(driver, wait, input_elements[-1])
         except Exception as exc:
             raise SantanderClientError(
                 SantanderFailureReason.LOGIN_FORM_NOT_FOUND,
@@ -128,25 +118,14 @@ class SeleniumBalancePortalClient:
         self,
         driver: Any,
         wait: WebDriverWait,
-        user_input: Any,
-        password_input: Any,
+        input_elements: list[Any],
     ) -> None:
         delay_seconds = self._portal_config.type_delay_ms / 1_000
-        self._click_and_type_human_like(
-            driver,
-            user_input,
-            self._portal_config.username,
-            delay_seconds,
-        )
-        time.sleep(max(delay_seconds * 2, 0.12))
-        self._click_and_type_human_like(
-            driver,
-            password_input,
-            self._portal_config.password,
-            delay_seconds,
-        )
+        for value, element in zip(self._login_values(), input_elements, strict=True):
+            self._click_and_type_human_like(driver, element, value, delay_seconds)
+            time.sleep(max(delay_seconds * 2, 0.12))
         time.sleep(max(delay_seconds * 4, 0.25))
-        self._submit_login(driver, wait, password_input)
+        self._submit_login(driver, wait, input_elements[-1])
 
     def _click_and_type_human_like(
         self,
@@ -174,6 +153,29 @@ class SeleniumBalancePortalClient:
         )
         ActionChains(driver).move_to_element(submit_button).pause(0.5).click().perform()
 
+    def _login_fields(self) -> list[tuple[str | None, str | None]]:
+        fields: list[tuple[str | None, str | None]] = []
+        if (
+            self._portal_config.document_number is not None
+            or self._portal_config.document_number_selector is not None
+        ):
+            fields.append(
+                (
+                    self._portal_config.document_number,
+                    self._portal_config.document_number_selector,
+                )
+            )
+        fields.extend(
+            [
+                (self._portal_config.username, self._portal_config.username_selector),
+                (self._portal_config.password, self._portal_config.password_selector),
+            ]
+        )
+        return fields
+
+    def _login_values(self) -> list[str | None]:
+        return [value for value, _selector in self._login_fields()]
+
     def _wait_for_home(self, driver: Any, wait: WebDriverWait) -> None:
         try:
             wait.until(
@@ -181,10 +183,27 @@ class SeleniumBalancePortalClient:
                 == self._portal_config.post_login_url
             )
         except TimeoutException as exc:
+            failure_reason = self._classify_login_failure(driver)
             raise SantanderClientError(
-                SantanderFailureReason.LOGIN_NOT_COMPLETED,
+                failure_reason,
                 f"{self._portal_config.source} no redirigio a home. URL actual: {driver.current_url}",
             ) from exc
+
+    def _classify_login_failure(self, driver: Any) -> SantanderFailureReason:
+        if self._selector_is_visible(driver, self._portal_config.login_error_selector):
+            return SantanderFailureReason.INCORRECT_PASSWORD
+        if self._selector_is_visible(driver, self._portal_config.offline_selector):
+            return SantanderFailureReason.SERVICE_OFFLINE
+        return SantanderFailureReason.LOGIN_NOT_COMPLETED
+
+    @staticmethod
+    def _selector_is_visible(driver: Any, selector: str | None) -> bool:
+        if not selector:
+            return False
+        try:
+            return driver.find_element(By.XPATH, selector).is_displayed()
+        except Exception:
+            return False
 
     def _extract_balance_text(self, wait: WebDriverWait) -> str:
         try:
@@ -211,12 +230,13 @@ class SeleniumBalancePortalClient:
                 ec.element_to_be_clickable((By.XPATH, self._portal_config.logout_selector))
             )
             ActionChains(driver).move_to_element(logout_button).pause(0.2).click().perform()
-            confirm_button = wait.until(
-                ec.element_to_be_clickable(
-                    (By.XPATH, self._portal_config.logout_confirm_selector)
+            if self._portal_config.logout_confirm_selector:
+                confirm_button = wait.until(
+                    ec.element_to_be_clickable(
+                        (By.XPATH, self._portal_config.logout_confirm_selector)
+                    )
                 )
-            )
-            ActionChains(driver).move_to_element(confirm_button).pause(0.2).click().perform()
+                ActionChains(driver).move_to_element(confirm_button).pause(0.2).click().perform()
             if self._wait_for_logout_confirmation(driver):
                 logger.info("%s_logout_completed driver=selenium", self._portal_config.source)
             else:
@@ -272,6 +292,8 @@ def _santander_portal_config(settings: Settings) -> BalancePortalConfig:
         logout_selector=settings.santander_logout_selector,
         logout_confirm_selector=settings.santander_logout_confirm_selector,
         logout_success_url=settings.santander_logout_success_url,
+        login_error_selector=settings.santander_login_error_selector,
+        offline_selector=settings.santander_offline_selector,
         input_mode=settings.santander_input_mode,
         submit_strategy=settings.santander_submit_strategy,
         type_delay_ms=settings.santander_type_delay_ms,
