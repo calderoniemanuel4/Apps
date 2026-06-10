@@ -37,6 +37,11 @@ def test_settings_defaults_are_safe_for_local_scaffold() -> None:
     assert settings.galicia_submit_strategy == "click"
     assert settings.galicia_type_delay_ms == 60
     assert settings.galicia_attempt_state_file == Path("tmp/galicia_login_attempts.json")
+    assert settings.mercadopago_enabled is False
+    assert settings.mercadopago_release_report_url.endswith("/v1/account/release_report")
+    assert settings.mercadopago_report_wait_seconds == 30
+    assert settings.mercadopago_report_max_attempts == 5
+    assert settings.mercadopago_report_state_file == Path("tmp/mercadopago_release_reports.json")
 
 
 def test_real_write_requires_google_sheets_configuration() -> None:
@@ -106,6 +111,31 @@ def test_galicia_enabled_accepts_required_configuration() -> None:
     )
 
     assert settings.galicia_enabled is True
+
+
+def test_mercadopago_enabled_requires_access_token() -> None:
+    with pytest.raises(ValidationError, match="Falta configuracion requerida para Mercado Pago"):
+        Settings(_env_file=None, MERCADOPAGO_ENABLED=True)
+
+
+def test_mercadopago_enabled_accepts_required_configuration() -> None:
+    settings = Settings(
+        _env_file=None,
+        MERCADOPAGO_ENABLED=True,
+        MERCADOPAGO_ACCESS_TOKEN="token",
+    )
+
+    assert settings.mercadopago_enabled is True
+
+
+def test_mercadopago_report_wait_is_bounded() -> None:
+    with pytest.raises(ValidationError, match="MERCADOPAGO_REPORT_WAIT_SECONDS"):
+        Settings(_env_file=None, MERCADOPAGO_REPORT_WAIT_SECONDS=-1)
+
+
+def test_mercadopago_report_max_attempts_is_bounded() -> None:
+    with pytest.raises(ValidationError, match="MERCADOPAGO_REPORT_MAX_ATTEMPTS"):
+        Settings(_env_file=None, MERCADOPAGO_REPORT_MAX_ATTEMPTS=0)
 
 
 def test_santander_attempt_limit_is_bounded() -> None:

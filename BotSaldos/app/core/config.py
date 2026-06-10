@@ -130,6 +130,37 @@ class Settings(BaseSettings):
         default=Path("tmp/galicia_login_attempts.json"),
         alias="GALICIA_ATTEMPT_STATE_FILE",
     )
+    mercadopago_enabled: bool = Field(default=False, alias="MERCADOPAGO_ENABLED")
+    mercadopago_access_token: str | None = Field(default=None, alias="MERCADOPAGO_ACCESS_TOKEN")
+    mercadopago_release_report_url: str = Field(
+        default="https://api.mercadopago.com/v1/account/release_report",
+        alias="MERCADOPAGO_RELEASE_REPORT_URL",
+    )
+    mercadopago_release_report_list_url: str = Field(
+        default="https://api.mercadopago.com/v1/account/release_report/list",
+        alias="MERCADOPAGO_RELEASE_REPORT_LIST_URL",
+    )
+    mercadopago_release_report_download_url: str = Field(
+        default="https://api.mercadopago.com/v1/account/release_report",
+        alias="MERCADOPAGO_RELEASE_REPORT_DOWNLOAD_URL",
+    )
+    mercadopago_timeout_seconds: int = Field(default=30, alias="MERCADOPAGO_TIMEOUT_SECONDS")
+    mercadopago_report_wait_seconds: int = Field(
+        default=30,
+        alias="MERCADOPAGO_REPORT_WAIT_SECONDS",
+    )
+    mercadopago_report_max_attempts: int = Field(
+        default=5,
+        alias="MERCADOPAGO_REPORT_MAX_ATTEMPTS",
+    )
+    mercadopago_validate_report_range: bool = Field(
+        default=True,
+        alias="MERCADOPAGO_VALIDATE_REPORT_RANGE",
+    )
+    mercadopago_report_state_file: Path = Field(
+        default=Path("tmp/mercadopago_release_reports.json"),
+        alias="MERCADOPAGO_REPORT_STATE_FILE",
+    )
     external_api_timeout_seconds: int = Field(default=20, alias="EXTERNAL_API_TIMEOUT_SECONDS")
     external_api_dollar_quote_url: str = Field(
         default="https://dolarapi.com/v1/dolares/oficial",
@@ -350,6 +381,67 @@ class Settings(BaseSettings):
         if not value.startswith(("https://", "http://")):
             raise ValueError("EXTERNAL_API_DOLLAR_QUOTE_URL debe ser una URL HTTP o HTTPS")
         return value
+
+    @field_validator(
+        "mercadopago_release_report_url",
+        "mercadopago_release_report_list_url",
+        "mercadopago_release_report_download_url",
+    )
+    @classmethod
+    def validate_mercadopago_urls(cls, value: str) -> str:
+        """Valida URLs HTTP configuradas para Mercado Pago."""
+        if not value.startswith(("https://", "http://")):
+            raise ValueError("Las URLs de Mercado Pago deben ser HTTP o HTTPS")
+        return value
+
+    @field_validator("mercadopago_access_token", mode="before")
+    @classmethod
+    def normalize_mercadopago_access_token(cls, value: str | None) -> str | None:
+        """Normaliza el token opcional sin exponerlo."""
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+    @field_validator("mercadopago_timeout_seconds")
+    @classmethod
+    def validate_mercadopago_timeout(cls, value: int) -> int:
+        """Evita timeouts nulos o excesivos para Mercado Pago."""
+        if value < 1 or value > 120:
+            raise ValueError("MERCADOPAGO_TIMEOUT_SECONDS debe estar entre 1 y 120")
+        return value
+
+    @field_validator("mercadopago_report_wait_seconds")
+    @classmethod
+    def validate_mercadopago_report_wait_seconds(cls, value: int) -> int:
+        """Evita esperas negativas o demasiado largas entre crear y listar reportes."""
+        if value < 0 or value > 600:
+            raise ValueError("MERCADOPAGO_REPORT_WAIT_SECONDS debe estar entre 0 y 600")
+        return value
+
+    @field_validator("mercadopago_report_max_attempts")
+    @classmethod
+    def validate_mercadopago_report_max_attempts(cls, value: int) -> int:
+        """Evita polling nulo o excesivo para reportes de Mercado Pago."""
+        if value < 1 or value > 20:
+            raise ValueError("MERCADOPAGO_REPORT_MAX_ATTEMPTS debe estar entre 1 y 20")
+        return value
+
+    @model_validator(mode="after")
+    def validate_mercadopago_requirements(self) -> "Settings":
+        """Exige configuracion minima cuando Mercado Pago esta habilitado."""
+        if not self.mercadopago_enabled:
+            return self
+
+        missing_fields: list[str] = []
+        if not self.mercadopago_access_token:
+            missing_fields.append("MERCADOPAGO_ACCESS_TOKEN")
+
+        if missing_fields:
+            joined_fields = ", ".join(missing_fields)
+            raise ValueError(f"Falta configuracion requerida para Mercado Pago: {joined_fields}")
+
+        return self
 
     @model_validator(mode="after")
     def validate_real_write_requirements(self) -> "Settings":

@@ -6,9 +6,14 @@ from typing import Protocol
 
 from app.core.config import Settings
 from app.core.login_attempt_state import LoginAttemptState
+from app.core.report_state import ReportState
 from app.integrations.api_client import ExternalApiClient
 from app.integrations.balance_portal import BalancePortalError
 from app.integrations.galicia_selenium_client import GaliciaSeleniumClient
+from app.integrations.mercadopago_api_client import (
+    MercadoPagoApiClient,
+    MercadoPagoApiClientError,
+)
 from app.integrations.santander_selenium_client import SantanderSeleniumClient
 from app.integrations.sheets_client import SheetsClient
 from app.schemas.transaction import BalanceStatus, MonetaryBalance
@@ -53,6 +58,8 @@ class SyncSummary:
     santander_failure_reason: str | None
     galicia_status: BalanceStatus
     galicia_failure_reason: str | None
+    mercadopago_status: BalanceStatus
+    mercadopago_failure_reason: str | None
 
 
 class BalanceSyncService:
@@ -64,14 +71,20 @@ class BalanceSyncService:
         api_client: DollarQuoteSource | None = None,
         santander_client: PortalBalanceSource | None = None,
         galicia_client: PortalBalanceSource | None = None,
+        mercadopago_client: PortalBalanceSource | None = None,
         sheets_client: DollarQuoteSink | None = None,
         santander_attempt_state: LoginAttemptState | None = None,
         galicia_attempt_state: LoginAttemptState | None = None,
+        mercadopago_report_state: ReportState | None = None,
     ) -> None:
         self._settings = settings
         self._api_client = api_client or ExternalApiClient(settings)
         self._santander_client = santander_client or _build_santander_client(settings)
         self._galicia_client = galicia_client or _build_galicia_client(settings)
+        self._mercadopago_client = mercadopago_client or _build_mercadopago_client(
+            settings,
+            mercadopago_report_state,
+        )
         self._sheets_client = sheets_client or SheetsClient(settings)
         self._santander_attempt_state = santander_attempt_state or LoginAttemptState(
             path=settings.santander_attempt_state_file,
@@ -88,10 +101,12 @@ class BalanceSyncService:
 
         santander_balance = self._fetch_santander_balance()
         galicia_balance = self._fetch_galicia_balance()
+        mercadopago_balance = self._fetch_mercadopago_balance()
         dollar_quote = self._api_client.fetch_dollar_quote()
         balances = {
             "santander": santander_balance,
             "galicia": galicia_balance,
+            "mercadopago": mercadopago_balance,
         }
         written_count = 0
 
@@ -112,6 +127,8 @@ class BalanceSyncService:
             santander_failure_reason=santander_balance.failure_reason,
             galicia_status=galicia_balance.status,
             galicia_failure_reason=galicia_balance.failure_reason,
+            mercadopago_status=mercadopago_balance.status,
+            mercadopago_failure_reason=mercadopago_balance.failure_reason,
         )
 
         logger.info(
@@ -123,6 +140,8 @@ class BalanceSyncService:
                 "santander_failure_reason": summary.santander_failure_reason,
                 "galicia_status": summary.galicia_status.value,
                 "galicia_failure_reason": summary.galicia_failure_reason,
+                "mercadopago_status": summary.mercadopago_status.value,
+                "mercadopago_failure_reason": summary.mercadopago_failure_reason,
             },
         )
         return summary
@@ -144,6 +163,33 @@ class BalanceSyncService:
             client=self._galicia_client,
             attempt_state=self._galicia_attempt_state,
         )
+
+    def _fetch_mercadopago_balance(self) -> MonetaryBalance:
+        """Consulta Mercado Pago por API cuando corresponde."""
+        if not self._settings.mercadopago_enabled:
+            logger.info("mercadopago_skipped_disabled")
+            return MonetaryBalance(status=BalanceStatus.SKIPPED, source="mercadopago")
+
+        try:
+            return self._mercadopago_client.fetch_balance()
+        except MercadoPagoApiClientError as exc:
+            failure_message = _sanitize_log_message(str(exc))
+            logger.warning(
+                "mercadopago_balance_failed reason=%s message=%s",
+                exc.reason,
+                failure_message,
+                extra={
+                    "source": "mercadopago",
+                    "failure_reason": exc.reason,
+                    "failure_message": failure_message,
+                },
+            )
+            return MonetaryBalance(
+                status=BalanceStatus.FAILED,
+                source="mercadopago",
+                failure_reason=exc.reason,
+            )
+
 
 def _fetch_portal_balance(
     source: str,
@@ -225,6 +271,13 @@ def _build_santander_client(settings: Settings) -> PortalBalanceSource:
 
 def _build_galicia_client(settings: Settings) -> PortalBalanceSource:
     return GaliciaSeleniumClient(settings)
+
+
+def _build_mercadopago_client(
+    settings: Settings,
+    report_state: ReportState | None = None,
+) -> PortalBalanceSource:
+    return MercadoPagoApiClient(settings, report_state=report_state)
 
 
 def _should_count_as_login_attempt(exc: BalancePortalError) -> bool:

@@ -4,6 +4,7 @@ from app.core.config import Settings
 from app.core.login_attempt_state import LoginAttemptState
 from app.integrations.balance_portal import SantanderClientError, SantanderFailureReason
 from app.integrations.galicia_selenium_client import GaliciaSeleniumClient
+from app.integrations.mercadopago_api_client import MercadoPagoApiClientError
 from app.integrations.santander_selenium_client import SantanderSeleniumClient
 from app.schemas.transaction import BalanceStatus, MonetaryBalance
 from app.services.balance_sync_service import BalanceSyncService, _build_santander_client
@@ -27,6 +28,15 @@ class FakeSantanderSource:
         self._error = error
         self.calls = 0
 
+    def fetch_balance(self) -> MonetaryBalance:
+        self.calls += 1
+        if self._error is not None:
+            raise self._error
+        assert self._balance is not None
+        return self._balance
+
+
+class FakeMercadoPagoSource(FakeSantanderSource):
     def fetch_balance(self) -> MonetaryBalance:
         self.calls += 1
         if self._error is not None:
@@ -71,6 +81,7 @@ def test_run_in_dry_run_fetches_api_without_writing() -> None:
     assert summary.dry_run is True
     assert summary.santander_status == BalanceStatus.SKIPPED
     assert summary.galicia_status == BalanceStatus.SKIPPED
+    assert summary.mercadopago_status == BalanceStatus.SKIPPED
     assert sink.appended_quote is None
 
 
@@ -96,6 +107,7 @@ def test_run_writes_dollar_quote_and_santander_balance(tmp_path: Path) -> None:
     assert sink.appended_balances is not None
     assert sink.appended_balances["santander"] == balance
     assert sink.appended_balances["galicia"].status == BalanceStatus.SKIPPED
+    assert sink.appended_balances["mercadopago"].status == BalanceStatus.SKIPPED
 
 
 def test_run_records_santander_failure_and_continues_with_api(tmp_path: Path) -> None:
@@ -175,6 +187,58 @@ def test_run_records_galicia_failure_in_separate_attempt_state(tmp_path: Path) -
     assert summary.galicia_failure_reason == "incorrect_password"
     assert santander_state.snapshot().failed_attempts == 0
     assert galicia_state.snapshot().failed_attempts == 1
+
+
+def test_run_writes_mercadopago_balance_when_enabled(tmp_path: Path) -> None:
+    settings = _settings_for_real_write(
+        tmp_path,
+        MERCADOPAGO_ENABLED=True,
+        MERCADOPAGO_ACCESS_TOKEN="token",
+    )
+    balance = MonetaryBalance(
+        amount="4567.89",
+        status=BalanceStatus.SUCCESS,
+        source="mercadopago",
+    )
+    sink = FakeDollarQuoteSink()
+    service = BalanceSyncService(
+        settings=settings,
+        api_client=FakeDollarQuoteSource(_dollar_quote()),
+        mercadopago_client=FakeMercadoPagoSource(balance=balance),
+        sheets_client=sink,
+    )
+
+    summary = service.run()
+
+    assert summary.mercadopago_status == BalanceStatus.SUCCESS
+    assert summary.mercadopago_failure_reason is None
+    assert sink.appended_balances is not None
+    assert sink.appended_balances["mercadopago"] == balance
+
+
+def test_run_records_mercadopago_failure_and_continues_with_sheets(tmp_path: Path) -> None:
+    settings = _settings_for_real_write(
+        tmp_path,
+        MERCADOPAGO_ENABLED=True,
+        MERCADOPAGO_ACCESS_TOKEN="token",
+    )
+    sink = FakeDollarQuoteSink()
+    service = BalanceSyncService(
+        settings=settings,
+        api_client=FakeDollarQuoteSource(_dollar_quote()),
+        mercadopago_client=FakeMercadoPagoSource(
+            error=MercadoPagoApiClientError("report_not_ready", "not ready")
+        ),
+        sheets_client=sink,
+    )
+
+    summary = service.run()
+
+    assert summary.written_count == 1
+    assert summary.mercadopago_status == BalanceStatus.FAILED
+    assert summary.mercadopago_failure_reason == "report_not_ready"
+    assert sink.appended_balances is not None
+    assert sink.appended_balances["mercadopago"].failure_reason == "report_not_ready"
 
 
 def test_run_skips_santander_when_attempt_limit_is_reached(tmp_path: Path) -> None:

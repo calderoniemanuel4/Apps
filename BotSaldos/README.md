@@ -348,6 +348,29 @@ Galicia usa `GALICIA_ATTEMPT_STATE_FILE`, separado del estado de Santander. Para
 ./scripts/reset_galicia_attempts.sh
 ```
 
+### Mercado Pago API
+
+Mercado Pago se consulta por API usando reportes de dinero liberado
+(`release_report`). La automatizacion genera un reporte, espera a que este
+disponible con estado `enabled` o `processed`, descarga el CSV, lee la columna
+`BALANCE_AMOUNT` con `pandas` y guarda el ultimo saldo en las columnas
+`mercadopago_*`.
+
+Configuracion minima:
+
+```env
+MERCADOPAGO_ENABLED=false
+MERCADOPAGO_ACCESS_TOKEN=
+MERCADOPAGO_REPORT_WAIT_SECONDS=30
+MERCADOPAGO_REPORT_MAX_ATTEMPTS=5
+MERCADOPAGO_REPORT_STATE_FILE=tmp/mercadopago_release_reports.json
+```
+
+El estado de reportes descargados se persiste por `id`, para no procesar dos
+veces el mismo informe. El rango del reporte contempla siempre las ultimas 24
+horas al momento de ejecutar el cron. La documentacion operativa esta en
+`docs/mercadopago.md`.
+
 ## Contrato De Planilla
 
 El contrato operativo de Google Sheets esta documentado en `docs/sheets_contract.md`.
@@ -358,7 +381,7 @@ La worksheet por defecto es `Cotizaciones` y debe tener estos encabezados exacto
 fetched_at, santander_balance, santander_currency, santander_status, santander_failure_reason, galicia_balance, galicia_currency, galicia_status, galicia_failure_reason, mercadopago_balance, mercadopago_currency, mercadopago_status, mercadopago_failure_reason, compra, venta, casa, nombre, moneda, fecha_actualizacion, raw_response
 ```
 
-Las columnas `mercadopago_*` quedan reservadas para la integracion por API.
+Las columnas `mercadopago_*` se completan cuando `MERCADOPAGO_ENABLED=true`.
 
 ## Estado Actual
 
@@ -372,4 +395,4 @@ El servicio principal obtiene saldos bancarios cuando cada portal esta habilitad
 
 `ExternalApiClient` ya puede consultar la API HTTP configurable con timeout, validar que exista una cotizacion numerica y devolver la respuesta cruda.
 
-Las integraciones web especificas disponibles son Santander Personas y Galicia, con selectores configurables por entorno y limite de intentos persistido por portal. Mercado Pago queda reservado para integracion por API.
+Las integraciones web especificas disponibles son Santander Personas y Galicia, con selectores configurables por entorno y limite de intentos persistido por portal. Mercado Pago se integra por API mediante `release_report` y estado persistido de reportes descargados.

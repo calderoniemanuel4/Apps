@@ -109,4 +109,6 @@ def _summary(written_count: int, dry_run: bool) -> SyncSummary:
         santander_failure_reason=None,
         galicia_status=BalanceStatus.SKIPPED,
         galicia_failure_reason=None,
+        mercadopago_status=BalanceStatus.SKIPPED,
+        mercadopago_failure_reason=None,
     )
