@@ -40,15 +40,15 @@ raw_response
 - `fetched_at`: fecha y hora Argentina en que el bot obtuvo la respuesta, formato `dd-mm-yyyy  hh:mm:ss`.
 - `santander_balance`: saldo extraido desde Santander cuando la consulta web fue exitosa.
 - `santander_currency`: moneda del saldo de Santander. Valor esperado inicial: `ARS`.
-- `santander_status`: `success`, `skipped`, `failed` o `blocked`.
+- `santander_status`: `success`, `cached`, `skipped`, `failed` o `blocked`.
 - `santander_failure_reason`: causa normalizada si Santander fallo o quedo bloqueado.
 - `galicia_balance`: saldo extraido desde Galicia cuando la consulta web fue exitosa.
 - `galicia_currency`: moneda del saldo de Galicia. Valor esperado inicial: `ARS`.
-- `galicia_status`: `success`, `skipped`, `failed` o `blocked`.
+- `galicia_status`: `success`, `cached`, `skipped`, `failed` o `blocked`.
 - `galicia_failure_reason`: causa normalizada si Galicia fallo o quedo bloqueado.
 - `mercadopago_balance`: saldo obtenido desde Mercado Pago cuando la consulta por API fue exitosa.
 - `mercadopago_currency`: moneda del saldo de Mercado Pago. Valor esperado inicial: `ARS`.
-- `mercadopago_status`: `success`, `skipped`, `failed` o `blocked`.
+- `mercadopago_status`: `success`, `cached`, `skipped`, `failed` o `blocked`.
 - `mercadopago_failure_reason`: causa normalizada si Mercado Pago fallo o quedo bloqueado.
 - `compra`: valor de compra devuelto por la API cuando exista.
 - `venta`: valor de venta devuelto por la API cuando exista.
@@ -57,6 +57,10 @@ raw_response
 - `moneda`: codigo de moneda devuelto por la API.
 - `fecha_actualizacion`: timestamp original de actualizacion devuelto por la API.
 - `raw_response`: respuesta JSON completa de la API, serializada para auditoria simple.
+
+Cuando un cliente falla pero existe un saldo exitoso persistido en
+`BALANCE_STATE_FILE`, BotSaldos escribe ese ultimo saldo con estado `cached` y
+deja la causa original en `*_failure_reason`.
 
 ## Reglas
 

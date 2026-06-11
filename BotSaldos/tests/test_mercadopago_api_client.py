@@ -1,5 +1,6 @@
+import json
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import httpx
@@ -28,8 +29,8 @@ def test_fetch_balance_generates_downloads_and_persists_release_report(tmp_path:
                     {
                         "id": 123,
                         "status": "processed",
-                        "begin_date": "2026-06-01T00:00:00Z",
-                        "end_date": "2026-06-02T00:00:00Z",
+                        "begin_date": "2026-06-01T00:00:00-03:00",
+                        "end_date": "2026-06-02T00:00:00-03:00",
                         "file_name_report": "release-report.csv",
                     }
                 ],
@@ -72,8 +73,8 @@ def test_fetch_balance_downloads_enabled_release_report_from_list(tmp_path: Path
                 json=[
                     {
                         "id": 61743707,
-                        "begin_date": "2026-06-01T00:00:00Z",
-                        "end_date": "2026-06-02T00:00:00Z",
+                        "begin_date": "2026-06-01T00:00:00-03:00",
+                        "end_date": "2026-06-02T00:00:00-03:00",
                         "file_name": "reserve-release-67076163-manual-2026-06-09-004618.csv",
                         "status": "enabled",
                         "currency_id": "ARS",
@@ -101,6 +102,40 @@ def test_fetch_balance_downloads_enabled_release_report_from_list(tmp_path: Path
     assert ReportState(tmp_path / "reports.json").is_downloaded("61743707")
 
 
+def test_fetch_balance_accepts_equivalent_utc_report_range(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(202, json={"message": "processing"})
+        if str(request.url).endswith("/list"):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": 61743707,
+                        "begin_date": "2026-06-01T03:00:00Z",
+                        "end_date": "2026-06-02T03:00:00Z",
+                        "file_name": "reserve-release.csv",
+                        "status": "enabled",
+                        "currency_id": "ARS",
+                    }
+                ],
+            )
+        return httpx.Response(200, text="DATE;BALANCE_AMOUNT\n2026-06-02;1500.25\n")
+
+    client = MercadoPagoApiClient(
+        settings=_settings(tmp_path),
+        report_state=ReportState(tmp_path / "reports.json"),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        sleeper=lambda _: None,
+        clock=_fixed_clock,
+    )
+
+    balance = client.fetch_balance()
+
+    assert balance.status == BalanceStatus.SUCCESS
+    assert str(balance.amount) == "1500.25"
+
+
 def test_fetch_balance_backfills_latest_report_when_state_has_no_balance(
     tmp_path: Path,
 ) -> None:
@@ -117,16 +152,16 @@ def test_fetch_balance_backfills_latest_report_when_state_has_no_balance(
                 json=[
                     {
                         "id": 61743707,
-                        "begin_date": "2026-06-01T00:00:00Z",
-                        "end_date": "2026-06-02T00:00:00Z",
+                        "begin_date": "2026-06-01T00:00:00-03:00",
+                        "end_date": "2026-06-02T00:00:00-03:00",
                         "file_name": "already-downloaded.csv",
                         "status": "enabled",
                         "currency_id": "ARS",
                     },
                     {
                         "id": 61743683,
-                        "begin_date": "2026-06-01T00:00:00Z",
-                        "end_date": "2026-06-02T00:00:00Z",
+                        "begin_date": "2026-06-01T00:00:00-03:00",
+                        "end_date": "2026-06-02T00:00:00-03:00",
                         "file_name": "new-report.csv",
                         "status": "enabled",
                         "currency_id": "ARS",
@@ -170,8 +205,8 @@ def test_fetch_balance_polls_until_release_report_is_processed(tmp_path: Path) -
                     {
                         "id": 123,
                         "status": status,
-                        "begin_date": "2026-06-01T00:00:00Z",
-                        "end_date": "2026-06-02T00:00:00Z",
+                        "begin_date": "2026-06-01T00:00:00-03:00",
+                        "end_date": "2026-06-02T00:00:00-03:00",
                         "file_name_report": "release-report.csv",
                     }
                 ],
@@ -196,6 +231,58 @@ def test_fetch_balance_polls_until_release_report_is_processed(tmp_path: Path) -
     assert sleeps == [30]
 
 
+def test_fetch_balance_generates_new_report_when_latest_range_mismatches(
+    tmp_path: Path,
+) -> None:
+    list_calls = 0
+    downloaded_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal list_calls
+        if str(request.url).endswith("/config"):
+            return httpx.Response(200, json={})
+        if request.method == "POST":
+            return httpx.Response(202, json={"id": "generation-request-999"})
+        if str(request.url).endswith("/list"):
+            list_calls += 1
+            report_id = 123 if list_calls < 3 else 124
+            begin_date = "2026-05-30T00:00:00-03:00" if report_id == 123 else "2026-06-01T00:00:00-03:00"
+            end_date = "2026-05-31T00:00:00-03:00" if report_id == 123 else "2026-06-02T00:00:00-03:00"
+            file_name = "old-report.csv" if report_id == 123 else "new-report.csv"
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": report_id,
+                        "status": "processed",
+                        "begin_date": begin_date,
+                        "end_date": end_date,
+                        "file_name_report": file_name,
+                    }
+                ],
+            )
+        downloaded_urls.append(str(request.url))
+        return httpx.Response(200, text="DATE;BALANCE_AMOUNT\n2026-06-02;2040.75\n")
+
+    client = MercadoPagoApiClient(
+        settings=_settings(
+            tmp_path,
+            MERCADOPAGO_CONFIGURE_REPORT=True,
+            MERCADOPAGO_REPORT_WAIT_SECONDS=0,
+        ),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        sleeper=lambda _: None,
+        clock=_fixed_clock,
+    )
+
+    balance = client.fetch_balance()
+
+    assert balance.status == BalanceStatus.SUCCESS
+    assert str(balance.amount) == "2040.75"
+    assert list_calls == 3
+    assert downloaded_urls == ["https://api.example.com/release_report/new-report.csv"]
+
+
 def test_fetch_balance_persists_report_id_from_list_not_generation_request(
     tmp_path: Path,
 ) -> None:
@@ -211,8 +298,8 @@ def test_fetch_balance_persists_report_id_from_list_not_generation_request(
                     {
                         "id": "report-123",
                         "status": "processed",
-                        "begin_date": "2026-06-01T00:00:00Z",
-                        "end_date": "2026-06-02T00:00:00Z",
+                        "begin_date": "2026-06-01T00:00:00-03:00",
+                        "end_date": "2026-06-02T00:00:00-03:00",
                         "file_name_report": "release-report.csv",
                     }
                 ],
@@ -241,10 +328,12 @@ def test_fetch_balance_generates_new_report_when_latest_cached_report_was_downlo
     state.mark_downloaded("123", balance_amount=Decimal("1020.75"), balance_currency="ARS")
     list_calls = 0
     downloaded_urls: list[str] = []
+    post_payloads: list[dict[str, object]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal list_calls
         if request.method == "POST":
+            post_payloads.append(json.loads(request.content.decode("utf-8")))
             return httpx.Response(202, json={"id": "generation-request-999"})
         if str(request.url).endswith("/list"):
             list_calls += 1
@@ -256,8 +345,8 @@ def test_fetch_balance_generates_new_report_when_latest_cached_report_was_downlo
                     {
                         "id": report_id,
                         "status": "processed",
-                        "begin_date": "2026-06-01T00:00:00Z",
-                        "end_date": "2026-06-02T00:00:00Z",
+                        "begin_date": "2026-06-01T00:00:00-03:00",
+                        "end_date": "2026-06-02T00:00:00-03:00",
                         "file_name_report": file_name,
                         "currency_id": "ARS",
                     }
@@ -280,7 +369,148 @@ def test_fetch_balance_generates_new_report_when_latest_cached_report_was_downlo
     assert str(balance.amount) == "2040.75"
     assert balance.failure_reason is None
     assert downloaded_urls == ["https://api.example.com/release_report/new-report.csv"]
+    assert post_payloads == [
+        {
+            "begin_date": "2026-06-01T03:00:00Z",
+            "end_date": "2026-06-02T03:00:00Z",
+        }
+    ]
     assert state.is_downloaded("124")
+
+
+def test_fetch_balance_configures_release_report_before_generation(tmp_path: Path) -> None:
+    state = ReportState(tmp_path / "reports.json")
+    state.mark_downloaded("123", balance_amount=Decimal("1020.75"), balance_currency="ARS")
+    config_payloads: list[dict[str, object]] = []
+    list_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal list_calls
+        if str(request.url).endswith("/config"):
+            config_payloads.append(json.loads(request.content.decode("utf-8")))
+            return httpx.Response(201, json={"display_timezone": "GMT-03"})
+        if request.method == "POST":
+            return httpx.Response(202, json={"id": "generation-request-999"})
+        if str(request.url).endswith("/list"):
+            list_calls += 1
+            report_id = 123 if list_calls == 1 else 124
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": report_id,
+                        "status": "processed",
+                        "begin_date": "2026-06-01T00:00:00-03:00",
+                        "end_date": "2026-06-02T00:00:00-03:00",
+                        "file_name_report": "new-report.csv",
+                        "currency_id": "ARS",
+                    }
+                ],
+            )
+        return httpx.Response(200, text="DATE;BALANCE_AMOUNT\n2026-06-02;2040.75\n")
+
+    client = MercadoPagoApiClient(
+        settings=_settings(tmp_path, MERCADOPAGO_CONFIGURE_REPORT=True),
+        report_state=state,
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        sleeper=lambda _: None,
+        clock=_fixed_clock,
+    )
+
+    balance = client.fetch_balance()
+
+    assert balance.status == BalanceStatus.SUCCESS
+    assert len(config_payloads) == 1
+    assert config_payloads[0]["display_timezone"] == "GMT-03"
+    assert config_payloads[0]["separator"] == ";"
+    assert config_payloads[0]["check_available_balance"] is True
+    assert config_payloads[0]["include_withdrawal_at_end"] is True
+    assert {"key": "BALANCE_AMOUNT"} in config_payloads[0]["columns"]
+
+
+def test_fetch_balance_updates_existing_release_report_config_after_conflict(
+    tmp_path: Path,
+) -> None:
+    state = ReportState(tmp_path / "reports.json")
+    state.mark_downloaded("123", balance_amount=Decimal("1020.75"), balance_currency="ARS")
+    config_methods: list[str] = []
+    list_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal list_calls
+        if str(request.url).endswith("/config"):
+            config_methods.append(request.method)
+            if request.method == "POST":
+                return httpx.Response(409, json={"error": "Conflict"})
+            return httpx.Response(200, json={"display_timezone": "GMT-03"})
+        if request.method == "POST":
+            return httpx.Response(202, json={"id": "generation-request-999"})
+        if str(request.url).endswith("/list"):
+            list_calls += 1
+            report_id = 123 if list_calls == 1 else 124
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": report_id,
+                        "status": "processed",
+                        "begin_date": "2026-06-01T00:00:00-03:00",
+                        "end_date": "2026-06-02T00:00:00-03:00",
+                        "file_name_report": "new-report.csv",
+                        "currency_id": "ARS",
+                    }
+                ],
+            )
+        return httpx.Response(200, text="DATE;BALANCE_AMOUNT\n2026-06-02;2040.75\n")
+
+    client = MercadoPagoApiClient(
+        settings=_settings(tmp_path, MERCADOPAGO_CONFIGURE_REPORT=True),
+        report_state=state,
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        sleeper=lambda _: None,
+        clock=_fixed_clock,
+    )
+
+    balance = client.fetch_balance()
+
+    assert balance.status == BalanceStatus.SUCCESS
+    assert config_methods == ["POST", "PUT"]
+
+
+def test_fetch_balance_fails_when_release_report_config_is_rejected(tmp_path: Path) -> None:
+    state = ReportState(tmp_path / "reports.json")
+    state.mark_downloaded("123", balance_amount=Decimal("1020.75"), balance_currency="ARS")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url).endswith("/config"):
+            return httpx.Response(400, json={"message": "invalid display_timezone"})
+        if str(request.url).endswith("/list"):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": 123,
+                        "status": "processed",
+                        "begin_date": "2026-06-01T00:00:00-03:00",
+                        "end_date": "2026-06-02T00:00:00-03:00",
+                        "file_name_report": "old-report.csv",
+                    }
+                ],
+            )
+        return httpx.Response(202, json={})
+
+    client = MercadoPagoApiClient(
+        settings=_settings(tmp_path, MERCADOPAGO_CONFIGURE_REPORT=True),
+        report_state=state,
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        sleeper=lambda _: None,
+        clock=_fixed_clock,
+    )
+
+    with pytest.raises(MercadoPagoApiClientError, match="invalid display_timezone") as exc_info:
+        client.fetch_balance()
+
+    assert exc_info.value.reason == "report_config_failed"
 
 
 def test_fetch_balance_reuses_cached_balance_when_new_report_is_not_ready(tmp_path: Path) -> None:
@@ -298,8 +528,8 @@ def test_fetch_balance_reuses_cached_balance_when_new_report_is_not_ready(tmp_pa
                     {
                         "id": 123,
                         "status": "processed",
-                        "begin_date": "2026-06-01T00:00:00Z",
-                        "end_date": "2026-06-02T00:00:00Z",
+                        "begin_date": "2026-06-01T00:00:00-03:00",
+                        "end_date": "2026-06-02T00:00:00-03:00",
                         "file_name_report": "release-report.csv",
                         "currency_id": "ARS",
                     }
@@ -335,8 +565,8 @@ def test_fetch_balance_backfills_cache_for_old_downloaded_report_state(tmp_path:
                     {
                         "id": 123,
                         "status": "processed",
-                        "begin_date": "2026-06-01T00:00:00Z",
-                        "end_date": "2026-06-02T00:00:00Z",
+                        "begin_date": "2026-06-01T00:00:00-03:00",
+                        "end_date": "2026-06-02T00:00:00-03:00",
                         "file_name_report": "release-report.csv",
                         "currency_id": "ARS",
                     }
@@ -374,8 +604,8 @@ def test_fetch_balance_fails_when_report_is_not_ready_after_max_attempts(tmp_pat
                 {
                     "id": 123,
                     "status": "processing",
-                    "begin_date": "2026-06-01T00:00:00Z",
-                    "end_date": "2026-06-02T00:00:00Z",
+                    "begin_date": "2026-06-01T00:00:00-03:00",
+                    "end_date": "2026-06-02T00:00:00-03:00",
                     "file_name_report": "release-report.csv",
                 }
             ],
@@ -395,6 +625,40 @@ def test_fetch_balance_fails_when_report_is_not_ready_after_max_attempts(tmp_pat
     assert list_calls == 6
 
 
+def test_fetch_balance_includes_generation_error_body(tmp_path: Path) -> None:
+    state = ReportState(tmp_path / "reports.json")
+    state.mark_downloaded("123", balance_amount=Decimal("1020.75"), balance_currency="ARS")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(400, json={"message": "invalid begin_date"})
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "id": 123,
+                    "status": "processed",
+                    "begin_date": "2026-06-01T00:00:00-03:00",
+                    "end_date": "2026-06-02T00:00:00-03:00",
+                    "file_name_report": "release-report.csv",
+                }
+            ],
+        )
+
+    client = MercadoPagoApiClient(
+        settings=_settings(tmp_path),
+        report_state=state,
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        sleeper=lambda _: None,
+        clock=_fixed_clock,
+    )
+
+    with pytest.raises(MercadoPagoApiClientError, match="invalid begin_date") as exc_info:
+        client.fetch_balance()
+
+    assert exc_info.value.reason == "report_generation_failed"
+
+
 def test_fetch_balance_requires_balance_amount_column(tmp_path: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.method == "POST":
@@ -406,8 +670,8 @@ def test_fetch_balance_requires_balance_amount_column(tmp_path: Path) -> None:
                     {
                         "id": 123,
                         "status": "processed",
-                        "begin_date": "2026-06-01T00:00:00Z",
-                        "end_date": "2026-06-02T00:00:00Z",
+                        "begin_date": "2026-06-01T00:00:00-03:00",
+                        "end_date": "2026-06-02T00:00:00-03:00",
                         "file_name_report": "release-report.csv",
                     }
                 ],
@@ -451,8 +715,8 @@ def test_fetch_balance_accepts_localized_balance_amounts(
                     {
                         "id": 123,
                         "status": "processed",
-                        "begin_date": "2026-06-01T00:00:00Z",
-                        "end_date": "2026-06-02T00:00:00Z",
+                        "begin_date": "2026-06-01T00:00:00-03:00",
+                        "end_date": "2026-06-02T00:00:00-03:00",
                         "file_name_report": "release-report.csv",
                     }
                 ],
@@ -480,6 +744,7 @@ def _settings(tmp_path: Path, **overrides: object) -> Settings:
         "MERCADOPAGO_RELEASE_REPORT_LIST_URL": "https://api.example.com/release_report/list",
         "MERCADOPAGO_RELEASE_REPORT_DOWNLOAD_URL": "https://api.example.com/release_report",
         "MERCADOPAGO_REPORT_WAIT_SECONDS": 0,
+        "MERCADOPAGO_CONFIGURE_REPORT": False,
         "MERCADOPAGO_REPORT_STATE_FILE": tmp_path / "reports.json",
     }
     values.update(overrides)
@@ -489,4 +754,4 @@ def _settings(tmp_path: Path, **overrides: object) -> Settings:
 
 
 def _fixed_clock() -> datetime:
-    return datetime(2026, 6, 2, tzinfo=timezone.utc)
+    return datetime(2026, 6, 2, tzinfo=timezone(timedelta(hours=-3)))

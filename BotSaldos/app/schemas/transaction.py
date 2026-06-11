@@ -10,6 +10,7 @@ class BalanceStatus(StrEnum):
     """Estado de consulta de saldo web."""
 
     SUCCESS = "success"
+    CACHED = "cached"
     SKIPPED = "skipped"
     FAILED = "failed"
     BLOCKED = "blocked"

@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from io import StringIO
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -19,6 +20,25 @@ from app.schemas.transaction import BalanceStatus, MonetaryBalance
 logger = logging.getLogger(__name__)
 
 READY_REPORT_STATUSES = frozenset({"enabled", "processed"})
+ARGENTINA_TIMEZONE = ZoneInfo("America/Argentina/Buenos_Aires")
+REPORT_RANGE_TOLERANCE_SECONDS = 1
+RELEASE_REPORT_COLUMNS = (
+    "DATE",
+    "SOURCE_ID",
+    "DESCRIPTION",
+    "NET_CREDIT_AMOUNT",
+    "NET_DEBIT_AMOUNT",
+    "GROSS_AMOUNT",
+    "MP_FEE_AMOUNT",
+    "TAXES_AMOUNT",
+    "PAYMENT_METHOD",
+    "TRANSACTION_APPROVAL_DATE",
+    "BUSINESS_UNIT",
+    "SUB_UNIT",
+    "BALANCE_AMOUNT",
+    "PAYMENT_METHOD_TYPE",
+    "PURCHASE_ID",
+)
 
 
 class MercadoPagoApiClientError(RuntimeError):
@@ -74,8 +94,17 @@ class MercadoPagoApiClient:
             except MercadoPagoApiClientError as exc:
                 if exc.reason not in {"report_not_ready", "latest_report_mismatch", "report_list_empty"}:
                     raise
+                previous_report_id = (
+                    self._fetch_previous_report_id(client, request)
+                    if exc.reason == "latest_report_mismatch"
+                    else None
+                )
                 generation_request_id = self._request_report_generation(client, request)
-                latest_report = self._wait_for_latest_report(client, request)
+                latest_report = (
+                    self._wait_for_new_report(client, request, previous_report_id)
+                    if previous_report_id is not None
+                    else self._wait_for_latest_report(client, request)
+                )
 
             report_id = self._extract_report_id(latest_report)
             currency = str(latest_report.get("currency_id") or "ARS")
@@ -146,6 +175,7 @@ class MercadoPagoApiClient:
         client: httpx.Client,
         request: ReleaseReportRequest,
     ) -> str | None:
+        self._ensure_report_config(client)
         response = client.post(
             self._settings.mercadopago_release_report_url,
             headers=self._headers(),
@@ -159,7 +189,8 @@ class MercadoPagoApiClient:
         if response.status_code not in {200, 202}:
             raise MercadoPagoApiClientError(
                 "report_generation_failed",
-                f"Mercado Pago respondio {response.status_code} al crear el reporte",
+                "Mercado Pago respondio "
+                f"{response.status_code} al crear el reporte: {_safe_response_text(response)}",
             )
         generation_request_id = _extract_optional_response_id(response)
         logger.info(
@@ -171,6 +202,56 @@ class MercadoPagoApiClient:
             },
         )
         return generation_request_id
+
+    def _ensure_report_config(self, client: httpx.Client) -> None:
+        if not self._settings.mercadopago_configure_report:
+            return
+
+        payload = self._build_report_config_payload()
+        response = client.post(
+            self._settings.mercadopago_release_report_config_url,
+            headers=self._headers(),
+            json=payload,
+        )
+        if response.status_code == 409:
+            logger.info("mercadopago_release_report_config_exists_update_started")
+            response = client.put(
+                self._settings.mercadopago_release_report_config_url,
+                headers=self._headers(),
+                json=payload,
+            )
+        if response.status_code not in {200, 201}:
+            raise MercadoPagoApiClientError(
+                "report_config_failed",
+                "Mercado Pago respondio "
+                f"{response.status_code} al configurar el reporte: {_safe_response_text(response)}",
+            )
+
+        logger.info(
+            "mercadopago_release_report_configured",
+            extra={
+                "display_timezone": payload["display_timezone"],
+                "columns_count": len(payload["columns"]),
+            },
+        )
+
+    def _build_report_config_payload(self) -> dict[str, object]:
+        return {
+            "columns": [{"key": column} for column in RELEASE_REPORT_COLUMNS],
+            "file_name_prefix": "botsaldos-release-report",
+            "frequency": {
+                "hour": 0,
+                "value": 1,
+                "type": "monthly",
+            },
+            "separator": ";",
+            "display_timezone": self._settings.mercadopago_report_display_timezone,
+            "report_translation": "en",
+            "include_withdrawal_at_end": True,
+            "check_available_balance": True,
+            "compensate_detail": True,
+            "execute_after_withdrawal": False,
+        }
 
     def _wait_for_latest_report(
         self,
@@ -217,7 +298,7 @@ class MercadoPagoApiClient:
         for attempt_number in range(1, max_attempts + 1):
             self._wait_before_report_list(attempt_number)
             try:
-                latest_report = self._fetch_latest_report(client, request)
+                latest_report = self._fetch_latest_report(client, request, validate_range=False)
             except MercadoPagoApiClientError as exc:
                 if exc.reason not in {"report_not_ready", "latest_report_mismatch", "report_list_empty"}:
                     raise
@@ -272,6 +353,7 @@ class MercadoPagoApiClient:
         self,
         client: httpx.Client,
         request: ReleaseReportRequest,
+        validate_range: bool = True,
     ) -> dict[str, object]:
         response = client.get(
             self._settings.mercadopago_release_report_list_url,
@@ -298,13 +380,26 @@ class MercadoPagoApiClient:
                 f"El ultimo reporte de Mercado Pago aun no esta listo: {status or 'unknown'}",
             )
 
-        if not self._matches_requested_range(latest_report, request):
+        if validate_range and not self._matches_requested_range(latest_report, request):
             raise MercadoPagoApiClientError(
                 "latest_report_mismatch",
                 "El ultimo reporte de Mercado Pago no coincide con el rango solicitado",
             )
 
         return latest_report
+
+    def _fetch_previous_report_id(
+        self,
+        client: httpx.Client,
+        request: ReleaseReportRequest,
+    ) -> str | None:
+        try:
+            previous_report = self._fetch_latest_report(client, request, validate_range=False)
+        except MercadoPagoApiClientError as exc:
+            if exc.reason in {"report_not_ready", "report_list_empty"}:
+                return None
+            raise
+        return self._extract_report_id(previous_report)
 
     def _download_report(self, client: httpx.Client, file_name: str) -> str:
         response = client.get(
@@ -356,7 +451,7 @@ class MercadoPagoApiClient:
         return _parse_decimal_amount(values.iloc[-1])
 
     def _build_report_request(self) -> ReleaseReportRequest:
-        end_date = self._clock()
+        end_date = self._clock().astimezone(ARGENTINA_TIMEZONE)
         begin_date = end_date - timedelta(hours=24)
         return ReleaseReportRequest(
             begin_date=_format_api_datetime(begin_date),
@@ -392,14 +487,40 @@ class MercadoPagoApiClient:
     ) -> bool:
         if not self._settings.mercadopago_validate_report_range:
             return True
+        report_begin_date = _parse_api_datetime(report.get("begin_date"))
+        report_end_date = _parse_api_datetime(report.get("end_date"))
+        request_begin_date = _parse_api_datetime(request.begin_date)
+        request_end_date = _parse_api_datetime(request.end_date)
+        if not all((report_begin_date, report_end_date, request_begin_date, request_end_date)):
+            return False
+
+        begin_delta = abs((report_begin_date - request_begin_date).total_seconds())
+        end_delta = abs((report_end_date - request_end_date).total_seconds())
         return (
-            str(report.get("begin_date") or "") == request.begin_date
-            and str(report.get("end_date") or "") == request.end_date
+            begin_delta <= REPORT_RANGE_TOLERANCE_SECONDS
+            and end_delta <= REPORT_RANGE_TOLERANCE_SECONDS
         )
 
 
 def _format_api_datetime(value: datetime) -> str:
     return value.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _parse_api_datetime(value: object) -> datetime | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    if not normalized:
+        return None
+    if normalized.endswith("Z"):
+        normalized = f"{normalized[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=ARGENTINA_TIMEZONE)
+    return parsed.astimezone(timezone.utc)
 
 
 def _find_column(columns: Any, expected_name: str) -> str | None:
@@ -443,3 +564,12 @@ def _extract_optional_response_id(response: httpx.Response) -> str | None:
     if response_id is None:
         return None
     return str(response_id)
+
+
+def _safe_response_text(response: httpx.Response) -> str:
+    text = response.text.replace("\n", " ").strip()
+    if not text:
+        return "<empty>"
+    if len(text) > 240:
+        return f"{text[:240]}..."
+    return text

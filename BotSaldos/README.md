@@ -371,6 +371,13 @@ veces el mismo informe. El rango del reporte contempla siempre las ultimas 24
 horas al momento de ejecutar el cron. La documentacion operativa esta en
 `docs/mercadopago.md`.
 
+## Cache De Saldos
+
+`BALANCE_STATE_FILE` guarda el ultimo saldo exitoso por cliente. Si Santander,
+Galicia o Mercado Pago fallan en una ejecucion posterior, BotSaldos escribe ese
+ultimo saldo con estado `cached` y conserva la causa original en
+`*_failure_reason`.
+
 ## Contrato De Planilla
 
 El contrato operativo de Google Sheets esta documentado en `docs/sheets_contract.md`.

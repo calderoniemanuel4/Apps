@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 from typing import Protocol
 
+from app.core.balance_state import BalanceState
 from app.core.config import Settings
 from app.core.login_attempt_state import LoginAttemptState
 from app.core.report_state import ReportState
@@ -76,6 +77,7 @@ class BalanceSyncService:
         santander_attempt_state: LoginAttemptState | None = None,
         galicia_attempt_state: LoginAttemptState | None = None,
         mercadopago_report_state: ReportState | None = None,
+        balance_state: BalanceState | None = None,
     ) -> None:
         self._settings = settings
         self._api_client = api_client or ExternalApiClient(settings)
@@ -94,14 +96,18 @@ class BalanceSyncService:
             path=settings.galicia_attempt_state_file,
             max_attempts=settings.galicia_max_login_attempts,
         )
+        self._balance_state = balance_state or BalanceState(settings.balance_state_file)
 
     def run(self) -> SyncSummary:
         """Ejecuta la sincronizacion completa."""
         logger.info("balance_sync_started", extra={"dry_run": self._settings.dry_run})
 
-        santander_balance = self._fetch_santander_balance()
-        galicia_balance = self._fetch_galicia_balance()
-        mercadopago_balance = self._fetch_mercadopago_balance()
+        santander_balance = self._with_balance_cache("santander", self._fetch_santander_balance())
+        galicia_balance = self._with_balance_cache("galicia", self._fetch_galicia_balance())
+        mercadopago_balance = self._with_balance_cache(
+            "mercadopago",
+            self._fetch_mercadopago_balance(),
+        )
         dollar_quote = self._api_client.fetch_dollar_quote()
         balances = {
             "santander": santander_balance,
@@ -145,6 +151,40 @@ class BalanceSyncService:
             },
         )
         return summary
+
+    def _with_balance_cache(self, source: str, balance: MonetaryBalance) -> MonetaryBalance:
+        """Persiste saldos exitosos y reutiliza el ultimo ante fallas."""
+        if balance.status == BalanceStatus.SUCCESS:
+            self._balance_state.save(balance)
+            return balance
+
+        if balance.status not in {BalanceStatus.FAILED, BalanceStatus.BLOCKED}:
+            return balance
+
+        cached_balance = self._balance_state.get(source)
+        if cached_balance is None:
+            return balance
+
+        failure_reason = _cached_failure_reason(balance)
+        logger.warning(
+            "%s_balance_cached_after_failure status=%s reason=%s",
+            source,
+            balance.status.value,
+            balance.failure_reason,
+            extra={
+                "source": source,
+                "original_status": balance.status.value,
+                "failure_reason": balance.failure_reason,
+                "cached_last_updated_at": cached_balance.last_updated_at,
+            },
+        )
+        return MonetaryBalance(
+            amount=cached_balance.amount,
+            currency=cached_balance.currency,
+            source=source,
+            status=BalanceStatus.CACHED,
+            failure_reason=failure_reason,
+        )
 
     def _fetch_santander_balance(self) -> MonetaryBalance:
         """Consulta Santander cuando corresponde y registra intentos fallidos."""
@@ -263,6 +303,14 @@ def _sanitize_log_message(message: str) -> str:
     if len(sanitized) > 240:
         return f"{sanitized[:240]}..."
     return sanitized
+
+
+def _cached_failure_reason(balance: MonetaryBalance) -> str:
+    reason = balance.failure_reason or balance.status.value
+    cached_reason = f"cached_after_{balance.status.value}:{reason}"
+    if len(cached_reason) > 200:
+        return cached_reason[:200]
+    return cached_reason
 
 
 def _build_santander_client(settings: Settings) -> PortalBalanceSource:

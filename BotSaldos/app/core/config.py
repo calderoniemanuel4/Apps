@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     log_file: Path = Field(default=Path("logs/botsaldos.log"), alias="LOG_FILE")
     lock_file: Path = Field(default=Path("tmp/botsaldos.lock"), alias="LOCK_FILE")
+    balance_state_file: Path = Field(
+        default=Path("tmp/balances.json"),
+        alias="BALANCE_STATE_FILE",
+    )
 
     google_application_credentials: Path | None = Field(
         default=None,
@@ -136,6 +140,10 @@ class Settings(BaseSettings):
         default="https://api.mercadopago.com/v1/account/release_report",
         alias="MERCADOPAGO_RELEASE_REPORT_URL",
     )
+    mercadopago_release_report_config_url: str = Field(
+        default="https://api.mercadopago.com/v1/account/release_report/config",
+        alias="MERCADOPAGO_RELEASE_REPORT_CONFIG_URL",
+    )
     mercadopago_release_report_list_url: str = Field(
         default="https://api.mercadopago.com/v1/account/release_report/list",
         alias="MERCADOPAGO_RELEASE_REPORT_LIST_URL",
@@ -152,6 +160,14 @@ class Settings(BaseSettings):
     mercadopago_report_max_attempts: int = Field(
         default=5,
         alias="MERCADOPAGO_REPORT_MAX_ATTEMPTS",
+    )
+    mercadopago_configure_report: bool = Field(
+        default=True,
+        alias="MERCADOPAGO_CONFIGURE_REPORT",
+    )
+    mercadopago_report_display_timezone: str = Field(
+        default="GMT-03",
+        alias="MERCADOPAGO_REPORT_DISPLAY_TIMEZONE",
     )
     mercadopago_validate_report_range: bool = Field(
         default=True,
@@ -384,6 +400,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "mercadopago_release_report_url",
+        "mercadopago_release_report_config_url",
         "mercadopago_release_report_list_url",
         "mercadopago_release_report_download_url",
     )
@@ -426,6 +443,15 @@ class Settings(BaseSettings):
         if value < 1 or value > 20:
             raise ValueError("MERCADOPAGO_REPORT_MAX_ATTEMPTS debe estar entre 1 y 20")
         return value
+
+    @field_validator("mercadopago_report_display_timezone")
+    @classmethod
+    def validate_mercadopago_report_display_timezone(cls, value: str) -> str:
+        """Evita timezone vacio para reportes de Mercado Pago."""
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("MERCADOPAGO_REPORT_DISPLAY_TIMEZONE no puede estar vacio")
+        return normalized
 
     @model_validator(mode="after")
     def validate_mercadopago_requirements(self) -> "Settings":

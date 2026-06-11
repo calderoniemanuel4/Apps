@@ -13,6 +13,7 @@ def test_settings_defaults_are_safe_for_local_scaffold() -> None:
     assert settings.dry_run is True
     assert settings.log_file == Path("logs/botsaldos.log")
     assert settings.lock_file == Path("tmp/botsaldos.lock")
+    assert settings.balance_state_file == Path("tmp/balances.json")
     assert settings.google_sheets_spreadsheet_id is None
     assert settings.google_sheets_worksheet_name == "Cotizaciones"
     assert settings.external_api_dollar_quote_url == "https://dolarapi.com/v1/dolares/oficial"
@@ -39,8 +40,13 @@ def test_settings_defaults_are_safe_for_local_scaffold() -> None:
     assert settings.galicia_attempt_state_file == Path("tmp/galicia_login_attempts.json")
     assert settings.mercadopago_enabled is False
     assert settings.mercadopago_release_report_url.endswith("/v1/account/release_report")
+    assert settings.mercadopago_release_report_config_url.endswith(
+        "/v1/account/release_report/config"
+    )
     assert settings.mercadopago_report_wait_seconds == 30
     assert settings.mercadopago_report_max_attempts == 5
+    assert settings.mercadopago_configure_report is True
+    assert settings.mercadopago_report_display_timezone == "GMT-03"
     assert settings.mercadopago_report_state_file == Path("tmp/mercadopago_release_reports.json")
 
 
@@ -136,6 +142,11 @@ def test_mercadopago_report_wait_is_bounded() -> None:
 def test_mercadopago_report_max_attempts_is_bounded() -> None:
     with pytest.raises(ValidationError, match="MERCADOPAGO_REPORT_MAX_ATTEMPTS"):
         Settings(_env_file=None, MERCADOPAGO_REPORT_MAX_ATTEMPTS=0)
+
+
+def test_mercadopago_report_display_timezone_is_required() -> None:
+    with pytest.raises(ValidationError, match="MERCADOPAGO_REPORT_DISPLAY_TIMEZONE"):
+        Settings(_env_file=None, MERCADOPAGO_REPORT_DISPLAY_TIMEZONE=" ")
 
 
 def test_santander_attempt_limit_is_bounded() -> None:

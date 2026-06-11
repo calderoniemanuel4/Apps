@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from app.core.balance_state import BalanceState
 from app.core.config import Settings
 from app.core.login_attempt_state import LoginAttemptState
 from app.integrations.balance_portal import SantanderClientError, SantanderFailureReason
@@ -241,6 +242,78 @@ def test_run_records_mercadopago_failure_and_continues_with_sheets(tmp_path: Pat
     assert sink.appended_balances["mercadopago"].failure_reason == "report_not_ready"
 
 
+def test_run_uses_cached_mercadopago_balance_when_api_fails(tmp_path: Path) -> None:
+    settings = _settings_for_real_write(
+        tmp_path,
+        MERCADOPAGO_ENABLED=True,
+        MERCADOPAGO_ACCESS_TOKEN="token",
+    )
+    balance_state = BalanceState(tmp_path / "balances.json")
+    balance_state.save(
+        MonetaryBalance(
+            amount="9876.54",
+            currency="ARS",
+            source="mercadopago",
+            status=BalanceStatus.SUCCESS,
+        )
+    )
+    sink = FakeDollarQuoteSink()
+    service = BalanceSyncService(
+        settings=settings,
+        api_client=FakeDollarQuoteSource(_dollar_quote()),
+        mercadopago_client=FakeMercadoPagoSource(
+            error=MercadoPagoApiClientError("report_not_ready", "not ready")
+        ),
+        sheets_client=sink,
+        balance_state=balance_state,
+    )
+
+    summary = service.run()
+
+    assert summary.mercadopago_status == BalanceStatus.CACHED
+    assert summary.mercadopago_failure_reason == "cached_after_failed:report_not_ready"
+    assert sink.appended_balances is not None
+    cached_balance = sink.appended_balances["mercadopago"]
+    assert cached_balance.amount is not None
+    assert str(cached_balance.amount) == "9876.54"
+
+
+def test_run_uses_cached_santander_balance_when_portal_fails(tmp_path: Path) -> None:
+    settings = _settings_for_real_write(tmp_path, SANTANDER_ENABLED=True)
+    balance_state = BalanceState(tmp_path / "balances.json")
+    balance_state.save(
+        MonetaryBalance(
+            amount="1234.56",
+            currency="ARS",
+            source="santander",
+            status=BalanceStatus.SUCCESS,
+        )
+    )
+    sink = FakeDollarQuoteSink()
+    service = BalanceSyncService(
+        settings=settings,
+        api_client=FakeDollarQuoteSource(_dollar_quote()),
+        santander_client=FakeSantanderSource(
+            error=SantanderClientError(
+                SantanderFailureReason.BALANCE_NOT_FOUND,
+                "missing xpath",
+            )
+        ),
+        sheets_client=sink,
+        santander_attempt_state=_attempt_state(tmp_path),
+        balance_state=balance_state,
+    )
+
+    summary = service.run()
+
+    assert summary.santander_status == BalanceStatus.CACHED
+    assert summary.santander_failure_reason == "cached_after_failed:balance_not_found"
+    assert sink.appended_balances is not None
+    cached_balance = sink.appended_balances["santander"]
+    assert cached_balance.amount is not None
+    assert str(cached_balance.amount) == "1234.56"
+
+
 def test_run_skips_santander_when_attempt_limit_is_reached(tmp_path: Path) -> None:
     settings = _settings_for_real_write(tmp_path, SANTANDER_ENABLED=True)
     state = _attempt_state(tmp_path)
@@ -309,6 +382,7 @@ def _settings_for_real_write(tmp_path: Path, **overrides: object) -> Settings:
         "GALICIA_SUBMIT_SELECTOR": "#submit",
         "GALICIA_BALANCE_XPATH": "//saldo",
         "GALICIA_LOGOUT_SELECTOR": "#logout",
+        "BALANCE_STATE_FILE": tmp_path / "balances.json",
     }
     values.update(overrides)
     return Settings(**values)
